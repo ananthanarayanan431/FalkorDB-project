@@ -16,12 +16,14 @@ from pydantic import BaseModel, Field
 from sample.graph_store import GraphStore
 
 EXTRACT_PROMPT = """You maintain a knowledge graph built from a user's chat messages.
-From the user's message return:
+From the user's latest message return:
 - facts: durable facts stated in the message, as (subject, relation, object) triples.
   Use "user" as the subject for first-person statements. Keep entity names short
   (e.g. "hyderabad", "langgraph"). Use short verb phrases for relations
   (e.g. "works at", "lives in", "likes"). Return no facts for questions or small talk.
-- entities: every entity the message mentions or asks about, so related facts can be looked up."""
+- entities: every entity the latest message mentions or asks about, so related facts can be looked up.
+Earlier messages are context only. Use them to resolve pronouns such as "he" or "it",
+and only extract facts that the latest message states."""
 
 ANSWER_PROMPT = """You are a helpful assistant with a long-term memory stored in a graph database.
 Facts retrieved from memory for this message (format: subject RELATION object):
@@ -40,6 +42,11 @@ class Fact(BaseModel):
 class Extraction(BaseModel):
     facts: list[Fact] = Field(default_factory=list)
     entities: list[str] = Field(default_factory=list)
+
+
+# How many recent messages the extractor sees, so follow-ups like "he is two"
+# can be tied back to the entity named earlier.
+EXTRACT_CONTEXT_MESSAGES = 6
 
 
 class State(MessagesState):
@@ -65,17 +72,16 @@ def build_chatbot(llm=None, store: GraphStore | None = None):
     extractor = llm.with_structured_output(Extraction)
 
     def extract(state: State):
-        user_text = state["messages"][-1].content
-        result = extractor.invoke(
-            [SystemMessage(EXTRACT_PROMPT), ("user", user_text)]
-        )
+        recent = state["messages"][-EXTRACT_CONTEXT_MESSAGES:]
+        result = extractor.invoke([SystemMessage(EXTRACT_PROMPT), *recent])
         for f in result.facts:
             store.add_fact(f.subject, f.relation, f.object)
         return {"entities": result.entities}
 
     def retrieve(state: State):
-        names = ["user", *state.get("entities", [])]
-        return {"facts": store.facts_about(names)}
+        return {
+            "facts": store.facts_about(state.get("entities", []), fallback=["user"])
+        }
 
     def respond(state: State):
         facts = "\n".join(state.get("facts", [])) or "(none)"
