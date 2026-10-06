@@ -8,7 +8,7 @@ Each turn runs three nodes:
 import os
 
 from langchain_core.messages import SystemMessage
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 from pydantic import BaseModel, Field
@@ -66,9 +66,28 @@ def default_llm() -> ChatOpenAI:
     return ChatOpenAI(model=os.getenv("LLM_MODEL", "gpt-4o-mini"), temperature=0)
 
 
+def default_embedder() -> OpenAIEmbeddings:
+    """Same provider selection as default_llm. text-embedding-3-small is 1536-dim."""
+    model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    if key := os.getenv("OPENROUTER_API_KEY"):
+        return OpenAIEmbeddings(
+            model=f"openai/{model}" if "/" not in model else model,
+            api_key=key,
+            base_url="https://openrouter.ai/api/v1",
+            check_embedding_ctx_length=False,
+        )
+    return OpenAIEmbeddings(model=model)
+
+
 def build_chatbot(llm=None, store: GraphStore | None = None):
     llm = llm or default_llm()
-    store = store or GraphStore()
+    if store is None:
+        has_embedding_key = any(
+            os.getenv(k) for k in ("OPENROUTER_API_KEY", "OPENAI_API_KEY")
+        )
+        # Without credentials the store falls back to exact-name lookup.
+        embed = default_embedder().embed_documents if has_embedding_key else None
+        store = GraphStore(embed=embed)
     extractor = llm.with_structured_output(Extraction)
 
     def extract(state: State):
