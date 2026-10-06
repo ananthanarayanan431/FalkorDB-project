@@ -81,7 +81,13 @@ def default_embedder() -> OpenAIEmbeddings:
 
 def build_chatbot(llm=None, store: GraphStore | None = None):
     llm = llm or default_llm()
-    store = store or GraphStore(embed=default_embedder().embed_documents)
+    if store is None:
+        has_embedding_key = any(
+            os.getenv(k) for k in ("OPENROUTER_API_KEY", "OPENAI_API_KEY")
+        )
+        # Without credentials the store falls back to exact-name lookup.
+        embed = default_embedder().embed_documents if has_embedding_key else None
+        store = GraphStore(embed=embed)
     extractor = llm.with_structured_output(Extraction)
 
     def extract(state: State):

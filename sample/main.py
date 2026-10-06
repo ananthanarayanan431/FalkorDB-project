@@ -22,8 +22,9 @@ def main():
         if text == "/facts":
             print("\n".join(store.all_facts()) or "(graph is empty)", "\n")
             continue
-        if text.startswith("/profile"):
-            print(store.profile_retrieval([text.removeprefix("/profile").strip() or "user"]), "\n")
+        command, *rest = text.split(maxsplit=1)
+        if command == "/profile":
+            print(store.profile_retrieval([rest[0] if rest else "user"]), "\n")
             continue
         if text == "/reset":
             store.reset()

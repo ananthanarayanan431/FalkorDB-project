@@ -1,4 +1,5 @@
 """Thin wrapper around FalkorDB: stores facts as (Entity)-[RELATION]->(Entity)."""
+import logging
 import os
 import re
 import time
@@ -6,6 +7,8 @@ from typing import Callable
 
 from falkordb import FalkorDB
 from redis.exceptions import ResponseError
+
+logger = logging.getLogger(__name__)
 
 
 def _norm(name: str) -> str:
@@ -64,7 +67,20 @@ class GraphStore:
                     f"OPTIONS {{dimension: {dim}, similarityFunction: 'cosine'}}"
                 )
             except ResponseError:
-                pass  # index already exists
+                self._check_index_dim(dim)  # index already exists
+
+    def _check_index_dim(self, dim: int) -> None:
+        """Fail early if the persisted vector index was built for another dimension."""
+        rows = self.graph.ro_query("CALL db.indexes()").result_set
+        for row in rows:
+            opts = (row[3] or {}).get("embedding") if row[0] == "Entity" else None
+            existing = opts.get("dimension") if opts else None
+            if existing is not None and existing != dim:
+                raise RuntimeError(
+                    f"Vector index on Entity.embedding has dimension {existing} but "
+                    f"the embedder is configured for {dim} (EMBEDDING_DIM). Set "
+                    "EMBEDDING_DIM to match, or clear the graph with /reset and restart."
+                )
 
     def add_fact(self, subject: str, relation: str, obj: str) -> None:
         s, o = _norm(subject), _norm(obj)
@@ -87,7 +103,12 @@ class GraphStore:
             "SET r.updated_at = $now",
             {"s": s, "o": o, "now": now},
         )
-        self._embed_missing([s, o])
+        try:
+            self._embed_missing([s, o])
+        except Exception:
+            # The fact is already stored; missing vectors are backfilled by the
+            # next add_fact that touches these entities.
+            logger.warning("Embedding failed for %s, %s", s, o, exc_info=True)
 
     def _embed_missing(self, names: list[str]) -> None:
         if not self.embed:
@@ -101,7 +122,7 @@ class GraphStore:
         todo = [n for n in dict.fromkeys(names) if n not in done]
         if not todo:
             return
-        for name, vec in zip(todo, self.embed(todo)):
+        for name, vec in zip(todo, self.embed(todo), strict=True):
             self.graph.query(
                 "MATCH (e:Entity {name: $n}) SET e.embedding = vecf32($v)",
                 {"n": name, "v": vec},
@@ -113,7 +134,12 @@ class GraphStore:
         if not self.embed or not names:
             return []
         found: list[str] = []
-        for vec in self.embed(names):
+        try:
+            vectors = self.embed(names)
+        except Exception:
+            logger.warning("Embedding failed during entity lookup", exc_info=True)
+            return []
+        for vec in vectors:
             result = self.graph.ro_query(
                 "CALL db.idx.vector.queryNodes('Entity', 'embedding', $k, vecf32($v)) "
                 "YIELD node, score WHERE score <= $max RETURN node.name",
