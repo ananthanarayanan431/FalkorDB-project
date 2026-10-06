@@ -8,7 +8,7 @@ from sample.chatbot import build_chatbot  # noqa: E402
 def main():
     chatbot, store = build_chatbot()
     config = {"configurable": {"thread_id": "cli"}}
-    print("Chat started. Commands: /facts  /reset  /quit\n")
+    print("Chat started. Commands: /facts  /profile <entity>  /reset  /quit\n")
 
     while True:
         try:
@@ -21,6 +21,9 @@ def main():
             break
         if text == "/facts":
             print("\n".join(store.all_facts()) or "(graph is empty)", "\n")
+            continue
+        if text.startswith("/profile"):
+            print(store.profile_retrieval([text.removeprefix("/profile").strip() or "user"]), "\n")
             continue
         if text == "/reset":
             store.reset()
