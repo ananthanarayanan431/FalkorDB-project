@@ -34,6 +34,8 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     status: {"model": ErrorResponse, "description": description}
     for status, description in {
         400: "Bad request",
+        401: "Unauthorized",
+        403: "Forbidden",
         404: "Not found",
         409: "Conflict",
         422: "Validation error",

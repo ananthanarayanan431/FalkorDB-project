@@ -137,10 +137,32 @@ def test_handover_plan_and_unknown_receiver(seeded_client):
     assert_error(seeded_client.get(f"{V1}/handover/ghost"), 404, "NOT_FOUND")
 
 
-def test_reset(seeded_client):
-    resp = seeded_client.post(f"{V1}/admin/reset")
+def test_reset(seeded_client, monkeypatch):
+    monkeypatch.setenv("KT_ADMIN_TOKEN", "s3cret")
+    iid = seeded_client.post(f"{V1}/interviews", json={}).json()["data"]["interview_id"]
+    resp = seeded_client.post(f"{V1}/admin/reset", headers={"X-Admin-Token": "s3cret"})
     assert resp.json() == {"success": True, "message": "Graph and interview sessions reset", "data": None}
     assert seeded_client.get(f"{V1}/graph").json()["data"]["nodes"] == []
+    assert_error(seeded_client.post(f"{V1}/interviews/{iid}/skip"), 404, "NOT_FOUND")
+
+
+def test_reset_disabled_without_admin_token(seeded_client, monkeypatch):
+    monkeypatch.delenv("KT_ADMIN_TOKEN", raising=False)
+    assert_error(seeded_client.post(f"{V1}/admin/reset"), 403, "FORBIDDEN")
+    assert seeded_client.get(f"{V1}/graph").json()["data"]["nodes"] != []
+
+
+def test_reset_rejects_wrong_admin_token(seeded_client, monkeypatch):
+    monkeypatch.setenv("KT_ADMIN_TOKEN", "s3cret")
+    assert_error(seeded_client.post(f"{V1}/admin/reset"), 401, "UNAUTHORIZED")
+    resp = seeded_client.post(f"{V1}/admin/reset", headers={"X-Admin-Token": "nope"})
+    assert_error(resp, 401, "UNAUTHORIZED")
+
+
+def test_graph_export_hides_interview_sessions(seeded_client):
+    seeded_client.post(f"{V1}/interviews", json={})
+    nodes = seeded_client.get(f"{V1}/graph").json()["data"]["nodes"]
+    assert not any("Interview" in n["labels"] for n in nodes)
 
 
 def test_openapi_documents_error_envelope(client):

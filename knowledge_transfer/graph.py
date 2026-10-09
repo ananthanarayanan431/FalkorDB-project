@@ -11,6 +11,7 @@ Schema
   (Item)-[:PREREQUISITE_OF]->(Item)                learn the source before the target
   (Item)-[:DOCUMENTED_BY]->(Document)
   (Answer)-[:EXPLAINS]->(Item), (Person)-[:GAVE]->(Answer)
+  (:Interview {id, leaver, state, version})        interview session; state is JSON
 
 Every node and edge written here carries provenance: source, source_ref,
 confidence, created_at.
@@ -54,7 +55,7 @@ class KnowledgeGraph:
         self.graph = self.db.select_graph(
             graph_name or os.getenv("FALKORDB_KT_GRAPH", "knowledge_transfer")
         )
-        for label in ("Person", "Item", "Document", "Answer"):
+        for label in ("Person", "Item", "Document", "Answer", "Interview"):
             try:
                 self.graph.query(f"CREATE INDEX FOR (n:{label}) ON (n.id)")
             except ResponseError:
@@ -136,6 +137,22 @@ class KnowledgeGraph:
              "kind": kind, "source": source, "conf": confidence, "now": _now()},
         )
         return id
+
+    def create_interview(self, id: str, leaver: str, state: str) -> None:
+        self.graph.query(
+            "CREATE (:Interview {id: $id, leaver: $leaver, state: $state, version: 0, "
+            "created_at: $now, updated_at: $now})",
+            {"id": id, "leaver": leaver, "state": state, "now": _now()},
+        )
+
+    def save_interview(self, id: str, state: str, expected_version: int) -> bool:
+        """Compare-and-set on `version`; False when another writer saved first."""
+        rows = self.graph.query(
+            "MATCH (s:Interview {id: $id}) WHERE s.version = $v "
+            "SET s.state = $state, s.version = $v + 1, s.updated_at = $now RETURN s.id",
+            {"id": id, "state": state, "v": expected_version, "now": _now()},
+        ).result_set
+        return bool(rows)
 
     def reset(self):
         self.graph.query("MATCH (n) DETACH DELETE n")
@@ -259,10 +276,17 @@ class KnowledgeGraph:
             )
         return out
 
+    def interview(self, id: str) -> tuple[str, int] | None:
+        """(state JSON, version) of an interview session."""
+        rows = self.graph.ro_query(
+            "MATCH (s:Interview {id: $id}) RETURN s.state, s.version", {"id": id}
+        ).result_set
+        return (rows[0][0], rows[0][1]) if rows else None
+
     def export(self):
         """Nodes and edges for a graph visualisation."""
         nodes = self.graph.ro_query(
-            "MATCH (n) RETURN n.id, labels(n), coalesce(n.name, n.title, n.kind), n.status"
+            "MATCH (n) WHERE NOT n:Interview RETURN n.id, labels(n), coalesce(n.name, n.title, n.kind), n.status"
         ).result_set
         edges = self.graph.ro_query(
             "MATCH (a)-[r]->(b) RETURN a.id, type(r), b.id"

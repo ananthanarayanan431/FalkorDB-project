@@ -4,9 +4,13 @@ Each turn: pick the highest-risk open gap (or a queued follow-up), write a
 question from the item's graph context, store the answer linked to the item it
 explains, and add anything new the answer mentions as items. New items have no
 documentation, so they surface as fresh gaps and drive later questions.
+
+Sessions are stored in the graph as (:Interview) nodes, so they survive restarts
+and are shared between workers. Saves are compare-and-set on a version number.
 """
+import json
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from knowledge_transfer.assistant import Assistant
 from knowledge_transfer.errors import InvalidState, NotFound
@@ -36,25 +40,44 @@ class Session:
     follow_ups: list[Question] = field(default_factory=list)
     skipped: set[str] = field(default_factory=set)
     turns: int = 0
+    version: int = 0
+
+    def to_json(self) -> str:
+        d = asdict(self)
+        d["skipped"] = sorted(self.skipped)
+        del d["id"], d["version"]
+        return json.dumps(d)
+
+    @classmethod
+    def from_json(cls, id: str, state: str, version: int) -> "Session":
+        d = json.loads(state)
+        current = Question(**d["current"]) if d["current"] else None
+        return cls(id, d["leaver"], current, [Question(**q) for q in d["follow_ups"]],
+                   set(d["skipped"]), d["turns"], version)
 
 
 class InterviewService:
     def __init__(self, graph: KnowledgeGraph, assistant: Assistant):
         self.graph = graph
         self.assistant = assistant
-        self.sessions: dict[str, Session] = {}
 
     def start(self, leaver: str) -> tuple[Session, Question | None]:
         if self.graph.person(leaver) is None:
             raise NotFound(f"Unknown person {leaver!r}")
         session = Session(uuid.uuid4().hex[:12], leaver)
-        self.sessions[session.id] = session
-        return session, self._advance(session)
+        q = self._advance(session)
+        self.graph.create_interview(session.id, leaver, session.to_json())
+        return session, q
 
     def get(self, session_id: str) -> Session:
-        if (session := self.sessions.get(session_id)) is None:
+        if (found := self.graph.interview(session_id)) is None:
             raise NotFound(f"Unknown interview {session_id!r}")
-        return session
+        return Session.from_json(session_id, *found)
+
+    def _save(self, session: Session) -> None:
+        if not self.graph.save_interview(session.id, session.to_json(), session.version):
+            raise InvalidState("Interview was updated by another request; fetch it and retry")
+        session.version += 1
 
     def answer(self, session_id: str, text: str) -> dict:
         session = self.get(session_id)
@@ -72,18 +95,22 @@ class InterviewService:
                 Question(q.item_id, q.item_name, analysis.follow_up, ["follow-up to previous answer"], q.risk, True)
             )
         session.turns += 1
+        next_question = self._advance_dict(session)
+        self._save(session)
         return {
             "stored_for": q.item_id,
             "answer_type": analysis.answer_type,
             "new_items": new_items,
-            "next_question": self._advance_dict(session),
+            "next_question": next_question,
         }
 
     def skip(self, session_id: str) -> dict:
         session = self.get(session_id)
         if session.current is not None:
             session.skipped.add(session.current.item_id)
-        return {"next_question": self._advance_dict(session)}
+        next_question = self._advance_dict(session)
+        self._save(session)
+        return {"next_question": next_question}
 
     def _advance_dict(self, session):
         q = self._advance(session)

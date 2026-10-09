@@ -40,6 +40,16 @@ class BadRequestError(ApiError):
     code = "BAD_REQUEST"
 
 
+class UnauthorizedError(ApiError):
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "UNAUTHORIZED"
+
+
+class ForbiddenError(ApiError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "FORBIDDEN"
+
+
 class ServiceUnavailableError(ApiError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "SERVICE_UNAVAILABLE"

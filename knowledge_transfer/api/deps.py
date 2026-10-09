@@ -1,9 +1,11 @@
 """Shared services and FastAPI dependencies."""
+import os
+import secrets
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Header, Request
 
-from knowledge_transfer.api.errors import BadRequestError
+from knowledge_transfer.api.errors import BadRequestError, ForbiddenError, UnauthorizedError
 from knowledge_transfer.assistant import Assistant
 from knowledge_transfer.errors import NotFound
 from knowledge_transfer.graph import KnowledgeGraph
@@ -22,6 +24,15 @@ def get_services(request: Request) -> Services:
 
 
 ServicesDep = Annotated[Services, Depends(get_services)]
+
+
+def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None:
+    """Admin routes need X-Admin-Token to match KT_ADMIN_TOKEN; with no token set they are off."""
+    expected = os.getenv("KT_ADMIN_TOKEN")
+    if not expected:
+        raise ForbiddenError("Admin endpoints are disabled; set KT_ADMIN_TOKEN to enable them")
+    if not x_admin_token or not secrets.compare_digest(x_admin_token, expected):
+        raise UnauthorizedError("Missing or invalid X-Admin-Token header")
 
 
 def require_person(services: Services, person: str) -> None:

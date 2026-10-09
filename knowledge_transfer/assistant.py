@@ -6,7 +6,6 @@ back to templates, so the interview and handover still work. Free-text
 extraction needs an LLM and raises LLMUnavailable otherwise.
 """
 import logging
-import os
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
@@ -40,15 +39,6 @@ Return only the question."""
 
 SUMMARY_PROMPT = """Write a 2-3 sentence welcome summary of this handover plan for {name}
 ({seniority}). {style} Plan steps in order: {steps}. Return only the summary."""
-
-
-def default_llm():
-    """None when no API key is configured."""
-    if not (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")):
-        return None
-    from sample.chatbot import default_llm as make_llm
-
-    return make_llm()
 
 
 class Assistant:

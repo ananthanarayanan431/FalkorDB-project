@@ -16,3 +16,5 @@ Tests run against an embedded FalkorDB: `make test`.
 
 Every response is `{"success": true, "message", "data"}` or
 `{"success": false, "message", "error": {"code", "details"}}`.
+`POST /api/v1/admin/reset` wipes the graph and needs `X-Admin-Token` matching `KT_ADMIN_TOKEN`
+(disabled while that is unset). Interview sessions are stored in FalkorDB, so they survive restarts.

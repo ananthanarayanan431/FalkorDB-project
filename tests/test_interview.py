@@ -28,7 +28,7 @@ def test_interview_ends_when_no_open_gaps(seeded, assistant):
     session, q = svc.start("ravi")
     n = 0
     while q is not None and n < 50:
-        q = svc.answer(session.id, "because") and svc.sessions[session.id].current
+        q = svc.answer(session.id, "because") and svc.get(session.id).current
         n += 1
     assert gaps.coverage(seeded, "ravi")["percent"] == 100.0
 
@@ -76,3 +76,21 @@ def test_llm_failure_falls_back_to_templates(seeded):
     assert "only person" in q.text  # template question
     out = svc.answer(session.id, "because")
     assert out["stored_for"] == q.item_id and out["answer_type"] == "other"
+
+
+def test_session_survives_a_new_service(seeded, assistant):
+    session, q = InterviewService(seeded, assistant).start("ravi")
+    restarted = InterviewService(seeded, assistant)  # e.g. another worker or a restart
+    assert restarted.get(session.id).current == q
+    assert restarted.answer(session.id, "because")["stored_for"] == q.item_id
+
+
+def test_concurrent_save_is_rejected(seeded, assistant):
+    import pytest
+    from knowledge_transfer.errors import InvalidState
+    svc = InterviewService(seeded, assistant)
+    session, _ = svc.start("ravi")
+    stale = svc.get(session.id)
+    svc.skip(session.id)
+    with pytest.raises(InvalidState):
+        svc._save(stale)

@@ -7,8 +7,9 @@ from fastapi import FastAPI
 from knowledge_transfer.api import v1
 from knowledge_transfer.api.deps import Services
 from knowledge_transfer.api.errors import register_error_handlers
-from knowledge_transfer.assistant import Assistant, default_llm
+from knowledge_transfer.assistant import Assistant
 from knowledge_transfer.graph import KnowledgeGraph
+from knowledge_transfer.llm import default_llm
 
 
 def create_app(services: Services | None = None) -> FastAPI:
