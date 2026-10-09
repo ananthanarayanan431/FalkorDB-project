@@ -63,9 +63,14 @@ async def voice_interview(ws: WebSocket, interview_id: str) -> None:
             if msg.get("bytes") is not None:
                 await session.on_audio(msg["bytes"])
             elif msg.get("text"):
-                data = json.loads(msg["text"])
-                if data.get("type") == "playback_done":
-                    await session.on_playback_done(int(data.get("id", -1)))
+                try:
+                    data = json.loads(msg["text"])
+                    speak_id = int(data["id"]) if data.get("type") == "playback_done" else None
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    logger.warning("Ignoring malformed voice control message")
+                    continue
+                if speak_id is not None:
+                    await session.on_playback_done(speak_id)
     except NotFound as e:
         await out.event({"type": "error", "message": str(e)})
         await ws.close(code=1008)

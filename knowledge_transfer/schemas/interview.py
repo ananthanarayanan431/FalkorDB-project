@@ -25,6 +25,8 @@ class Session:
     skipped: set[str] = field(default_factory=set)
     turns: int = 0
     version: int = 0
+    # Epoch seconds when a request claimed this session to write an answer to the graph.
+    busy_since: float | None = None
 
     @property
     def status(self) -> str:
@@ -40,4 +42,4 @@ class Session:
     def from_state(cls, id: str, d: dict[str, Any], version: int) -> "Session":
         current = Question(**d["current"]) if d["current"] else None
         return cls(id, d["leaver"], current, [Question(**q) for q in d["follow_ups"]],
-                   set(d["skipped"]), d["turns"], version)
+                   set(d["skipped"]), d["turns"], version, d.get("busy_since"))

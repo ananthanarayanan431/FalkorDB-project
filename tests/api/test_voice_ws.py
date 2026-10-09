@@ -73,6 +73,10 @@ async def test_spoken_turn_over_the_socket(seeded, assistant, db, interviews):
     i = next(i for i, m in enumerate(ws.sent) if isinstance(m, dict) and m["type"] == "audio")
     assert ws.sent[i]["format"] == "mp3" and isinstance(ws.sent[i + 1], bytes)
 
+    # malformed control messages are ignored, not fatal
+    ws.incoming.put_nowait({"type": "websocket.receive", "text": "not json"})
+    ws.push_json([1, 2])
+    ws.push_json({"type": "playback_done", "id": "abc"})
     ws.push_json({"type": "playback_done", "id": ws.events("audio_end")[0]["id"]})
     await wait_for(lambda: ws.events("state") and ws.events("state")[-1]["state"] == "listening")
 
@@ -87,6 +91,7 @@ async def test_spoken_turn_over_the_socket(seeded, assistant, db, interviews):
 
     ws.disconnect()
     await asyncio.wait_for(task, 2)
+    assert ws.closed_with is None
 
 
 async def test_voice_disabled_without_providers(seeded, assistant, db):

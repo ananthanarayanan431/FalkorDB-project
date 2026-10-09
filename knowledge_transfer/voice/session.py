@@ -22,6 +22,7 @@ import logging
 from enum import StrEnum
 from typing import Protocol
 
+from knowledge_transfer.core.errors import InvalidState
 from knowledge_transfer.services.interview import InterviewService
 from knowledge_transfer.voice.commands import parse_command
 from knowledge_transfer.voice.providers import (
@@ -200,6 +201,11 @@ class VoiceSession:
                 return
             await self.out.event({"type": "transcript", "role": "user", "text": text})
             await self._handle(text)
+        except InvalidState as e:
+            # Another request changed the interview first: drop this turn and re-ask
+            # whatever question is current now, so the next answer is saved against it.
+            await self.out.event({"type": "error", "message": e.message})
+            await self._resync()
         except Exception as e:  # keep the interview alive; the leaver can just speak again
             logger.exception("Voice turn failed")
             await self._fail(f"Something went wrong: {e}")
@@ -242,6 +248,10 @@ class VoiceSession:
         await self.out.event({"type": "transcript", "role": "user", "text": text, "amend": True})
         await self.interviews.amend(self.interview_id, answered["item_id"], answered["text"],
                                     text, source=VOICE_SOURCE)
+
+    async def _resync(self) -> None:
+        session = await self.interviews.get(self.interview_id)
+        await self._advance(session.current.to_dict() if session.current else None)
 
     async def _advance(self, next_question: dict | None) -> None:
         self._question = next_question

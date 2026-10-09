@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 import pytest
 from fakes.llm import FakeLLM
 
@@ -5,6 +8,7 @@ from knowledge_transfer.core.errors import InvalidState, NotFound
 from knowledge_transfer.schemas import AnswerAnalysis, ExtractedItem
 from knowledge_transfer.services import gaps
 from knowledge_transfer.services.assistant import Assistant
+from knowledge_transfer.services import interview
 from knowledge_transfer.services.interview import InterviewService
 
 
@@ -102,3 +106,53 @@ async def test_concurrent_save_is_rejected(interviews):
     await interviews.skip(session.id)
     with pytest.raises(InvalidState):
         await interviews._save(stale)
+
+
+async def test_concurrent_answers_write_the_graph_once(seeded, interviews):
+    session, q = await interviews.start("ravi")
+    analyse = interviews.assistant.analyse_answer
+
+    async def slow_analyse(*a):
+        await asyncio.sleep(0.05)  # both requests read the session before either claims it
+        return await analyse(*a)
+
+    interviews.assistant.analyse_answer = slow_analyse
+    results = await asyncio.gather(
+        interviews.answer(session.id, "first"), interviews.answer(session.id, "second"),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(r, InvalidState) for r in results) == 1
+    assert len((await seeded.answers_for([q.item_id]))[q.item_id]) == 1
+    assert [t["seq"] for t in await interviews.transcript(session.id)] == [1]
+
+
+async def test_busy_session_rejects_other_requests_until_the_claim_is_stale(seeded, interviews):
+    session, q = await interviews.start("ravi")
+    claimed = await interviews.get(session.id)
+    claimed.busy_since = time.time()
+    assert await interviews.store.save(claimed)
+    for call in (interviews.answer(session.id, "x"), interviews.skip(session.id),
+                 interviews.amend(session.id, q.item_id, q.text, "x")):
+        with pytest.raises(InvalidState):
+            await call
+    assert await seeded.answers_for([q.item_id]) == {}
+
+    stale = await interviews.get(session.id)
+    stale.busy_since = time.time() - interview.CLAIM_TTL_S - 1  # the claiming request died
+    assert await interviews.store.save(stale)
+    assert (await interviews.answer(session.id, "x"))["stored_for"] == q.item_id
+
+
+async def test_failed_turn_releases_the_claim(seeded, interviews, monkeypatch):
+    session, q = await interviews.start("ravi")
+
+    async def broken(*a, **kw):
+        raise RuntimeError("graph down")
+
+    monkeypatch.setattr(seeded, "add_answer", broken)
+    with pytest.raises(RuntimeError):
+        await interviews.answer(session.id, "x")
+    after = await interviews.get(session.id)
+    assert after.busy_since is None and after.current == q
+    monkeypatch.undo()
+    assert (await interviews.answer(session.id, "x"))["stored_for"] == q.item_id

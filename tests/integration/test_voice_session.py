@@ -2,6 +2,7 @@ import asyncio
 
 from fakes.voice import FakeSynthesizer, FakeTranscriber, Outbox, tone
 
+from knowledge_transfer.core.errors import InvalidState
 from knowledge_transfer.services import gaps
 from knowledge_transfer.voice.providers import VoiceProviders
 from knowledge_transfer.voice.session import (
@@ -196,3 +197,22 @@ async def test_close_cancels_background_work(interviews):
     await voice.close()
     assert voice.state is State.ENDED
     await voice.on_utterance(tone(500))  # ignored after close
+
+
+async def test_conflict_re_asks_the_current_question(seeded, interviews):
+    original_skip = interviews.skip
+
+    async def conflicting_answer(sid, *a, **kw):
+        await original_skip(sid)  # another client moved the interview on first
+        raise InvalidState("Interview was updated by another request; fetch it and retry")
+
+    interviews.answer = conflicting_answer
+    voice, out, _, sid = await make(interviews, "an answer")
+    first = voice._question["item_id"]
+    await finish_playback(voice)
+    await voice.on_utterance(tone(500))
+    await settle()
+    current = (await interviews.get(sid)).current
+    assert out.of("error") and current.item_id != first
+    assert voice._question == current.to_dict()
+    assert out.said()[-1] == current.text  # re-asked, so the next answer is saved against it

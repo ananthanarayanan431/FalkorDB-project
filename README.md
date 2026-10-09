@@ -16,7 +16,8 @@ Tests run against an embedded FalkorDB: `make test`.
 
 Every response is `{"success": true, "message", "data"}` or
 `{"success": false, "message", "error": {"code", "details"}}`.
-`POST /api/v1/reset` wipes the graph and stored results. The API has no authentication.
+`POST /api/v1/reset` wipes the graph and stored results. The API has no authentication, so reset
+returns 404 unless `ENABLE_RESET=true` is set.
 
 ### Storage
 

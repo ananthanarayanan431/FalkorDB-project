@@ -182,7 +182,14 @@ async def test_handover_plan_errors(seeded_client):
     assert_error(resp, 404, "NOT_FOUND")
 
 
-async def test_reset_clears_graph_and_stored_results(seeded_client):
+async def test_reset_is_disabled_by_default(seeded_client, monkeypatch):
+    monkeypatch.delenv("ENABLE_RESET", raising=False)
+    assert_error(await seeded_client.post(f"{V1}/reset"), 404, "NOT_FOUND")
+    assert (await seeded_client.get(f"{V1}/graph")).json()["data"]["nodes"] != []
+
+
+async def test_reset_clears_graph_and_stored_results(seeded_client, monkeypatch):
+    monkeypatch.setenv("ENABLE_RESET", "true")
     iid = (await seeded_client.post(f"{V1}/interviews", json={})).json()["data"]["interview_id"]
     await seeded_client.post(f"{V1}/handover-plans", json={"receiver": "sam"})
     resp = await seeded_client.post(f"{V1}/reset")

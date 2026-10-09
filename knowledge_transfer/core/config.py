@@ -22,6 +22,8 @@ class Settings:
     tts_model: str
     tts_voice: str
     voice_grace_s: float  # pause allowed before a spoken answer is saved
+    # POST /reset erases everything and the API has no auth, so it is off unless asked for
+    enable_reset: bool
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -39,6 +41,7 @@ class Settings:
             tts_model=env("TTS_MODEL", "deepgram/aura-2"),
             tts_voice=env("TTS_VOICE", "aura-2-thalia-en"),
             voice_grace_s=float(env("VOICE_GRACE_S", "0.8")),
+            enable_reset=env("ENABLE_RESET", "").lower() in ("1", "true", "yes"),
         )
 
 

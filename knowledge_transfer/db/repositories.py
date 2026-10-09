@@ -2,7 +2,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from knowledge_transfer.db.models import HandoverPlan, Interview, InterviewTurn
@@ -37,7 +37,10 @@ class SqlInterviewStore:
             if result.rowcount != 1:
                 return False
             if turn:
-                db.add(InterviewTurn(interview_id=s.id, seq=s.version + 1, **turn))
+                last = await db.scalar(
+                    select(func.max(InterviewTurn.seq)).where(InterviewTurn.interview_id == s.id)
+                )
+                db.add(InterviewTurn(interview_id=s.id, seq=(last or 0) + 1, **turn))
         return True
 
     async def transcript(self, id: str) -> list[dict[str, Any]]:
