@@ -10,10 +10,11 @@ from knowledge_transfer.api.v1.routes import (
     interviews,
     people,
     reset,
+    voice,
 )
 
 router = APIRouter(prefix="/api/v1", responses=ERROR_RESPONSES)
-for module in (health, ingest, people, analysis, interviews, handover, reset):
+for module in (health, ingest, people, analysis, interviews, handover, reset, voice):
     router.include_router(module.router)
 
 __all__ = ["router"]

@@ -7,10 +7,11 @@ from fastapi import FastAPI
 from knowledge_transfer.api import v1
 from knowledge_transfer.api.deps import Services
 from knowledge_transfer.api.errors import register_error_handlers
-from knowledge_transfer.assistant import Assistant
+from knowledge_transfer.core.llm import default_llm
 from knowledge_transfer.db import make_engine, make_sessionmaker
 from knowledge_transfer.graph import KnowledgeGraph
-from knowledge_transfer.llm import default_llm
+from knowledge_transfer.services.assistant import Assistant
+from knowledge_transfer.voice.providers import VoiceProviders
 
 
 def create_app(services: Services | None = None) -> FastAPI:
@@ -26,10 +27,15 @@ def create_app(services: Services | None = None) -> FastAPI:
         load_dotenv()
         engine = make_engine()
         graph = await KnowledgeGraph.connect()
-        app.state.services = Services(graph, Assistant(default_llm()), make_sessionmaker(engine))
+        voice = VoiceProviders.from_env()
+        app.state.services = Services(
+            graph, Assistant(default_llm()), make_sessionmaker(engine), voice
+        )
         try:
             yield
         finally:
+            if voice:
+                await voice.aclose()
             await graph.aclose()
             await engine.dispose()
 

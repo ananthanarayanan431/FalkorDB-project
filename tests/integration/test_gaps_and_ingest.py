@@ -1,6 +1,6 @@
-from knowledge_transfer import gaps
-from knowledge_transfer.ingest import ingest_sources
 from knowledge_transfer.seed.northwind import BUNDLE
+from knowledge_transfer.services import gaps
+from knowledge_transfer.services.ingest import ingest_sources
 
 
 async def test_seed_ingest_is_idempotent(graph):

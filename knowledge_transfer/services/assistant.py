@@ -10,9 +10,9 @@ import logging
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from knowledge_transfer.errors import LLMUnavailable
-from knowledge_transfer.gaps import Gap
-from knowledge_transfer.models import AnswerAnalysis, Extraction
+from knowledge_transfer.core.errors import LLMUnavailable
+from knowledge_transfer.schemas import AnswerAnalysis, Extraction
+from knowledge_transfer.services.gaps import Gap
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class Assistant:
 
     async def _structured(self, schema: type[BaseModel], system: str, human: str):
         if not self.llm:
-            raise LLMUnavailable("No LLM configured (set OPENROUTER_API_KEY or OPENAI_API_KEY)")
+            raise LLMUnavailable("No LLM configured (set OPENROUTER_API_KEY)")
         try:
             return await self.llm.with_structured_output(schema).ainvoke(
                 [SystemMessage(system), HumanMessage(human)]

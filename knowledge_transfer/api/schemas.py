@@ -1,4 +1,4 @@
-"""Request bodies specific to the HTTP API. Domain models live in `knowledge_transfer.models`."""
+"""Request bodies specific to the HTTP API. Domain models live in `knowledge_transfer.schemas`."""
 from pydantic import BaseModel, Field
 
 

@@ -3,11 +3,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from knowledge_transfer import handover
 from knowledge_transfer.api.deps import ServicesDep, resolve_leaver
 from knowledge_transfer.api.responses import ApiResponse, ok
 from knowledge_transfer.api.schemas import HandoverPlanIn
-from knowledge_transfer.errors import NotFound
+from knowledge_transfer.core.errors import NotFound
+from knowledge_transfer.services import handover
 
 router = APIRouter(tags=["handover"])
 

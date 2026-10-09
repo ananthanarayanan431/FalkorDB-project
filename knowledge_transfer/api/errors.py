@@ -1,6 +1,6 @@
 """API errors and the handlers that render them as `ErrorResponse`.
 
-Services raise the domain errors in `knowledge_transfer.errors`; routes do not
+Services raise the domain errors in `knowledge_transfer.core.errors`; routes do not
 catch them. `DOMAIN_ERRORS` maps each to a status and code in one place.
 """
 import logging
@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from knowledge_transfer.api.responses import ErrorBody, ErrorResponse
-from knowledge_transfer.errors import (
+from knowledge_transfer.core.errors import (
     InvalidInput,
     InvalidState,
     KnowledgeTransferError,

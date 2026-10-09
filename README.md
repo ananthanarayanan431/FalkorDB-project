@@ -10,8 +10,8 @@ gets (leaver's knowledge minus theirs) and in what order (`PREREQUISITE_OF` edge
     curl -X POST localhost:8000/api/v1/ingest/seed  # synthetic company (mode A)
 
 Flow: ingest sources and/or a leaver brain dump -> `GET gaps` / `coverage` -> `POST interviews`
-and `.../answer` -> `GET handover/{receiver}`. LLM keys (`OPENROUTER_API_KEY` or `OPENAI_API_KEY`)
-are optional: without them questions come from templates and brain-dump extraction is disabled.
+and `.../answer` -> `GET handover/{receiver}`. `OPENROUTER_API_KEY` is optional:
+without it questions come from templates, and brain-dump extraction and voice are disabled.
 Tests run against an embedded FalkorDB: `make test`.
 
 Every response is `{"success": true, "message", "data"}` or
@@ -30,3 +30,43 @@ Every response is `{"success": true, "message", "data"}` or
 edit `knowledge_transfer/db/models.py`, run `make revision m="what changed"`, review the file in
 `migrations/versions/`, then `make migrate`. Tests use SQLite unless `TEST_DATABASE_URL` points at a
 Postgres database (its tables are dropped and recreated).
+
+### Voice interview
+
+A spoken version of the interview over a WebSocket, using Deepgram Nova-3 (speech to text) and
+Aura-2 (text to speech) through OpenRouter, so `OPENROUTER_API_KEY` is the only key needed.
+
+    make api   # then open http://localhost:8000/api/v1/voice-demo (use headphones)
+
+`WS /api/v1/interviews/{id}/voice`: send 16 kHz mono PCM16 microphone frames; receive JSON events
+(`state`, `transcript`, `saved`, `clear`, `audio_end`, `error`, `ended`) and audio clips (a JSON
+`audio` header, then an MP3 frame). Send `{"type": "playback_done", "id": n}` when speech `n`
+has finished playing. Voice activity detection runs on the server because the OpenRouter audio
+endpoints are request/response, not live streams.
+
+Interruptions:
+- Speaking over the agent stops it at once (`clear` tells the browser to drop queued audio); what
+  is said becomes the answer, stored with `interrupted: true`.
+- Pausing and resuming within a short grace window (`VOICE_GRACE_S`, default 0.8 s) is one answer.
+- Speech while an answer is being saved is stored as an addition to it.
+- Short commands are recognised: "skip", "repeat that", "hold on", "stop".
+
+Spoken answers are stored in the graph with source `interview-voice`. Optional settings:
+`STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`, `VOICE_GRACE_S`.
+
+### Layout
+
+```
+knowledge_transfer/
+  core/       config.py (every env var + default), errors.py (domain errors), llm.py
+  schemas/    sources.py (mode A input), extraction.py (LLM output)
+  graph/      store.py: KnowledgeGraph on FalkorDB
+  db/         Postgres: base, models, session, repositories (Alembic in migrations/)
+  services/   assistant, gaps, handover, ingest, interview (business logic)
+  voice/      spoken interviews: VAD, STT/TTS providers, session
+  seed/       synthetic demo company
+  api/        FastAPI app, deps, error envelope, v1/routes
+tests/        unit/ (no I/O), integration/ (embedded FalkorDB + SQLite/Postgres), api/, fakes/
+```
+
+Dependencies point downwards: `api` -> `services`/`voice` -> `graph`/`db`/`schemas` -> `core`.

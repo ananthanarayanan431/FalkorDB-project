@@ -1,11 +1,11 @@
 import pytest
-from fakes import FakeLLM
+from fakes.llm import FakeLLM
 
-from knowledge_transfer import gaps
-from knowledge_transfer.assistant import Assistant
-from knowledge_transfer.errors import InvalidState, NotFound
-from knowledge_transfer.interview import InterviewService
-from knowledge_transfer.models import AnswerAnalysis, ExtractedItem
+from knowledge_transfer.core.errors import InvalidState, NotFound
+from knowledge_transfer.schemas import AnswerAnalysis, ExtractedItem
+from knowledge_transfer.services import gaps
+from knowledge_transfer.services.assistant import Assistant
+from knowledge_transfer.services.interview import InterviewService
 
 
 async def test_first_question_targets_highest_risk_open_gap(seeded, interviews):

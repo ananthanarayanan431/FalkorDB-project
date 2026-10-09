@@ -4,7 +4,7 @@ Ravi is leaving. Priya (mid) already works near his code; Sam (junior) is new.
 The undocumented decisions around billing retries, the ledger sync and month-end
 reconciliation exist only in Ravi's head, which is what the interview captures.
 """
-from knowledge_transfer.models import SourceBundle
+from knowledge_transfer.schemas import SourceBundle
 
 BUNDLE = SourceBundle.model_validate({
     "people": [

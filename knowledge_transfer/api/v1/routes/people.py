@@ -2,8 +2,8 @@ from fastapi import APIRouter, status
 
 from knowledge_transfer.api.deps import ServicesDep, require_person
 from knowledge_transfer.api.responses import ApiResponse, ok
-from knowledge_transfer.errors import NotFound
-from knowledge_transfer.models import KnowsLevelIn, PersonIn
+from knowledge_transfer.core.errors import NotFound
+from knowledge_transfer.schemas import KnowsLevelIn, PersonIn
 
 router = APIRouter(prefix="/people", tags=["people"])
 

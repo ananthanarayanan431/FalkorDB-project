@@ -9,10 +9,10 @@ PREREQUISITE_OF edges. The receiver's seniority picks the strategy:
           interview answers (reasons, traps). Documented items they lack become
           one-line reading pointers.
 """
-from knowledge_transfer.assistant import Assistant
-from knowledge_transfer.errors import NotFound
-from knowledge_transfer.gaps import gap_from_state
+from knowledge_transfer.core.errors import NotFound
 from knowledge_transfer.graph import KnowledgeGraph
+from knowledge_transfer.services.assistant import Assistant
+from knowledge_transfer.services.gaps import gap_from_state
 
 KNOWN_LEVEL = 2  # KNOWS level at or above this counts as already known
 

@@ -1,9 +1,9 @@
-from fakes import FakeLLM
+from fakes.llm import FakeLLM
 
-from knowledge_transfer import gaps, handover
-from knowledge_transfer.assistant import Assistant
-from knowledge_transfer.ingest import ingest_braindump
-from knowledge_transfer.models import ExtractedItem, Extraction
+from knowledge_transfer.schemas import ExtractedItem, Extraction
+from knowledge_transfer.services import gaps, handover
+from knowledge_transfer.services.assistant import Assistant
+from knowledge_transfer.services.ingest import ingest_braindump
 
 
 def names(plan):

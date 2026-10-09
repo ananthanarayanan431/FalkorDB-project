@@ -5,18 +5,20 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from knowledge_transfer.api.errors import BadRequestError
-from knowledge_transfer.assistant import Assistant
+from knowledge_transfer.core.errors import NotFound
 from knowledge_transfer.db import SqlHandoverPlanStore, SqlInterviewStore
-from knowledge_transfer.errors import NotFound
 from knowledge_transfer.graph import KnowledgeGraph
-from knowledge_transfer.interview import InterviewService
+from knowledge_transfer.services.assistant import Assistant
+from knowledge_transfer.services.interview import InterviewService
+from knowledge_transfer.voice.providers import VoiceProviders
 
 
 class Services:
     """FalkorDB for the knowledge graph, Postgres (`db`) for sessions and results."""
 
     def __init__(self, graph: KnowledgeGraph, assistant: Assistant,
-                 db: async_sessionmaker[AsyncSession]):
+                 db: async_sessionmaker[AsyncSession], voice: VoiceProviders | None = None):
+        self.voice = voice  # speech-to-text and text-to-speech; None disables the voice route
         self.graph = graph
         self.assistant = assistant
         self.db = db

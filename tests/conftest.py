@@ -7,12 +7,12 @@ from redislite.async_falkordb_client import AsyncFalkorDB
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from knowledge_transfer.assistant import Assistant
 from knowledge_transfer.db import Base, SqlInterviewStore, make_sessionmaker
 from knowledge_transfer.graph import KnowledgeGraph
-from knowledge_transfer.ingest import ingest_sources
-from knowledge_transfer.interview import InterviewService
 from knowledge_transfer.seed.northwind import BUNDLE
+from knowledge_transfer.services.assistant import Assistant
+from knowledge_transfer.services.ingest import ingest_sources
+from knowledge_transfer.services.interview import InterviewService
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 

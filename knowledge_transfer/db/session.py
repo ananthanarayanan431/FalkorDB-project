@@ -1,6 +1,4 @@
 """Async engine and session factory. Configure with DATABASE_URL."""
-import os
-
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -9,11 +7,11 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-DEFAULT_DATABASE_URL = "postgresql+asyncpg://kt:kt@localhost:5432/knowledge_transfer"
+from knowledge_transfer.core.config import get_settings
 
 
 def database_url() -> str:
-    return os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    return get_settings().database_url
 
 
 def make_engine(url: str | None = None, **kwargs) -> AsyncEngine:

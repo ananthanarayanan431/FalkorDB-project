@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice interview test</title>
+<style>
+  :root { --bg:#fafaf7; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e3e2dc; --accent:#2f5d50; --warn:#a4452c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161715; --fg:#ecebe6; --muted:#9a9a93; --card:#1f201e; --line:#33342f; --accent:#7fb7a4; --warn:#e08a70; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:1.25rem; margin:0 0 4px; }
+  p.hint { color:var(--muted); margin:0 0 20px; font-size:.9rem; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+  input { flex:1; min-width:180px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); font:inherit; }
+  button { padding:8px 14px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); font:inherit; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:default; }
+  #badge { display:inline-block; padding:2px 10px; border-radius:999px; border:1px solid var(--line); font-size:.85rem; color:var(--muted); }
+  #badge[data-state="speaking"] { color:var(--accent); border-color:var(--accent); }
+  #badge[data-state="listening"] { color:var(--fg); }
+  #log { display:flex; flex-direction:column; gap:10px; margin-top:8px; }
+  .msg { padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--card); }
+  .msg small { display:block; color:var(--muted); font-size:.75rem; margin-bottom:2px; text-transform:uppercase; letter-spacing:.04em; }
+  .msg.user { margin-left:32px; border-color:var(--accent); }
+  .msg.agent { margin-right:32px; }
+  .msg.err { color:var(--warn); border-color:var(--warn); }
+  .msg.note { color:var(--muted); font-size:.85rem; background:transparent; border-style:dashed; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Voice interview test</h1>
+  <p class="hint">Use headphones, or the agent's own voice can interrupt itself. Speak over the agent to interrupt it. Say "skip", "repeat that", "hold on" or "stop" for commands.</p>
+  <div class="row">
+    <input id="leaver" placeholder="Leaver id (blank = the person marked leaving)" aria-label="Leaver id">
+    <button id="start" class="primary">Start interview</button>
+    <button id="stop" disabled>End</button>
+  </div>
+  <div class="row"><span id="badge" data-state="idle" role="status">idle</span></div>
+  <div id="log" aria-live="polite"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const log = $("log"), badge = $("badge");
+let ws, ctx, micStream, worklet, source, epoch = 0, chain = Promise.resolve();
+let queue = [], playing = null, endId = null, nextKind = "speech";
+
+function add(cls, who, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  const s = document.createElement("small"); s.textContent = who;
+  d.append(s, document.createTextNode(text));
+  log.prepend(d);
+}
+function setBadge(s) { badge.dataset.state = s; badge.textContent = s; }
+
+function pump() {
+  if (playing) return;
+  if (!queue.length) {
+    if (endId !== null && ws && ws.readyState === 1) { ws.send(JSON.stringify({type: "playback_done", id: endId})); }
+    endId = null; return;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = queue.shift(); src.connect(ctx.destination);
+  src.onended = () => { if (playing === src) { playing = null; pump(); } };
+  playing = src; src.start();
+}
+function clearAudio() {
+  epoch++; queue = []; endId = null;
+  if (playing) { const p = playing; playing = null; p.onended = null; try { p.stop(); } catch (e) {} }
+}
+function enqueue(bytes) {
+  const my = epoch;
+  chain = chain.then(async () => {
+    try { const buf = await ctx.decodeAudioData(bytes.slice(0)); if (my === epoch) { queue.push(buf); pump(); } }
+    catch (e) { add("err", "audio", "Could not decode a clip: " + e); }
+  });
+}
+function markEnd(id) {
+  const my = epoch;
+  chain = chain.then(() => { if (my === epoch) { endId = id; pump(); } });
+}
+
+const workletCode = `class Cap extends AudioWorkletProcessor {
+  process(inputs) { const ch = inputs[0][0]; if (ch) {
+    const out = new Int16Array(ch.length);
+    for (let i = 0; i < ch.length; i++) { const s = Math.max(-1, Math.min(1, ch[i])); out[i] = s < 0 ? s * 0x8000 : s * 0x7fff; }
+    this.port.postMessage(out.buffer, [out.buffer]); }
+    return true; } }
+  registerProcessor("cap", Cap);`;
+
+async function start() {
+  $("start").disabled = true;
+  try {
+    ctx = new AudioContext({sampleRate: 16000});
+    await ctx.resume();
+    micStream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}});
+    const url = URL.createObjectURL(new Blob([workletCode], {type: "text/javascript"}));
+    await ctx.audioWorklet.addModule(url);
+    const body = JSON.stringify({leaver: $("leaver").value.trim() || null});
+    const r = await fetch("/api/v1/interviews", {method: "POST", headers: {"Content-Type": "application/json"}, body});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.message || r.status);
+    add("note", "interview", "Started " + j.data.interview_id);
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${proto}://${location.host}/api/v1/interviews/${j.data.interview_id}/voice`);
+    ws.binaryType = "arraybuffer";
+    ws.onmessage = onMessage;
+    ws.onclose = () => { setBadge("closed"); teardown(); };
+    ws.onopen = () => {
+      source = ctx.createMediaStreamSource(micStream);
+      worklet = new AudioWorkletNode(ctx, "cap");
+      worklet.port.onmessage = e => { if (ws.readyState === 1) ws.send(e.data); };
+      source.connect(worklet);
+      $("stop").disabled = false;
+    };
+  } catch (e) { add("err", "error", String(e)); $("start").disabled = false; teardown(); }
+}
+
+function onMessage(ev) {
+  if (ev.data instanceof ArrayBuffer) { enqueue(ev.data); return; }
+  const m = JSON.parse(ev.data);
+  switch (m.type) {
+    case "state": setBadge(m.state); break;
+    case "transcript": add(m.role, m.role === "agent" ? "agent" : (m.amend ? "you (added)" : "you"), m.text); break;
+    case "saved": add("note", "saved", `${m.item_id} (${m.answer_type})` + (m.new_items.length ? ", new: " + m.new_items.join(", ") : "")); break;
+    case "clear": clearAudio(); add("note", "interrupted", "agent stopped talking"); break;
+    case "audio_end": markEnd(m.id); break;
+    case "error": add("err", "error", m.message); break;
+    case "ended": add("note", "interview", "ended: " + m.reason); break;
+  }
+}
+
+function teardown() {
+  clearAudio();
+  if (worklet) worklet.disconnect();
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (ctx && ctx.state !== "closed") ctx.close();
+  worklet = micStream = null; $("start").disabled = false; $("stop").disabled = true;
+}
+$("start").onclick = start;
+$("stop").onclick = () => { if (ws) ws.close(); };
+</script>
+</body>
+</html>

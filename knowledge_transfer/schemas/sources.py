@@ -1,4 +1,4 @@
-"""Pydantic models shared by ingest, the services and the API."""
+"""Mode A input: structured company sources (people, items, docs, contributions)."""
 import re
 from typing import Literal
 
@@ -13,8 +13,6 @@ SourceType = Literal["ticket", "doc", "code", "interview", "braindump"]
 def slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
-
-# ---- mode A: structured company sources ---------------------------------
 
 class PersonIn(BaseModel):
     id: str
@@ -67,27 +65,3 @@ class SourceBundle(BaseModel):
     contributions: list[ContributionIn] = Field(default_factory=list)
     links: list[LinkIn] = Field(default_factory=list)
     knows: list[KnowsIn] = Field(default_factory=list)
-
-
-# ---- mode B / interview: what the LLM extracts from free text ------------
-
-class ExtractedItem(BaseModel):
-    name: str
-    kind: Kind = "topic"
-    description: str = ""
-    owned: bool = False
-    depends_on: list[str] = Field(default_factory=list)
-    prerequisites: list[str] = Field(
-        default_factory=list, description="things to understand before this one"
-    )
-
-
-class Extraction(BaseModel):
-    items: list[ExtractedItem] = Field(default_factory=list)
-
-
-class AnswerAnalysis(Extraction):
-    answer_type: Literal["rationale", "trap", "procedure", "contact", "other"] = "other"
-    follow_up: str | None = Field(
-        None, description="one follow-up question if the answer is vague or opens a new gap"
-    )

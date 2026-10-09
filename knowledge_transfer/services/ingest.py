@@ -4,9 +4,9 @@ Mode A (`ingest_sources`): structured company data (tickets, docs, code ownershi
 Mode B (`ingest_braindump`): free text from the leaver, turned into items by an LLM.
 Either can run first, or both; items are merged by id.
 """
-from knowledge_transfer.errors import InvalidInput
+from knowledge_transfer.core.errors import InvalidInput
 from knowledge_transfer.graph import KnowledgeGraph
-from knowledge_transfer.models import Extraction, SourceBundle, slug
+from knowledge_transfer.schemas import Extraction, SourceBundle, slug
 
 
 async def unknown_references(graph: KnowledgeGraph, bundle: SourceBundle) -> list[dict]:

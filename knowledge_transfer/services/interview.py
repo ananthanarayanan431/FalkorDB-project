@@ -11,54 +11,16 @@ Saves are compare-and-set on a version number, and each answer or skip is
 recorded as a transcript turn in the same save.
 """
 import uuid
-from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
-from knowledge_transfer.assistant import Assistant
-from knowledge_transfer.errors import InvalidState, NotFound
-from knowledge_transfer.gaps import open_gaps
+from knowledge_transfer.core.errors import InvalidState, NotFound
 from knowledge_transfer.graph import KnowledgeGraph
-from knowledge_transfer.ingest import apply_extraction
+from knowledge_transfer.schemas.interview import Question, Session
+from knowledge_transfer.services.assistant import Assistant
+from knowledge_transfer.services.gaps import open_gaps
+from knowledge_transfer.services.ingest import apply_extraction
 
-
-@dataclass
-class Question:
-    item_id: str
-    item_name: str
-    text: str
-    reasons: list[str]
-    risk: int
-    is_follow_up: bool = False
-
-    def to_dict(self):
-        return self.__dict__.copy()
-
-
-@dataclass
-class Session:
-    id: str
-    leaver: str
-    current: Question | None = None
-    follow_ups: list[Question] = field(default_factory=list)
-    skipped: set[str] = field(default_factory=set)
-    turns: int = 0
-    version: int = 0
-
-    @property
-    def status(self) -> str:
-        return "active" if self.current else "completed"
-
-    def to_state(self) -> dict[str, Any]:
-        d = asdict(self)
-        d["skipped"] = sorted(self.skipped)
-        del d["id"], d["version"]
-        return d
-
-    @classmethod
-    def from_state(cls, id: str, d: dict[str, Any], version: int) -> "Session":
-        current = Question(**d["current"]) if d["current"] else None
-        return cls(id, d["leaver"], current, [Question(**q) for q in d["follow_ups"]],
-                   set(d["skipped"]), d["turns"], version)
+__all__ = ["InterviewService", "InterviewStore", "Question", "Session"]
 
 
 class InterviewStore(Protocol):
@@ -98,13 +60,17 @@ class InterviewService:
             raise InvalidState("Interview was updated by another request; fetch it and retry")
         session.version += 1
 
-    async def answer(self, session_id: str, text: str) -> dict:
+    async def answer(self, session_id: str, text: str, *, source: str = "interview",
+                     interrupted: bool = False) -> dict:
+        """`source` records how the answer arrived ("interview-voice" for spoken ones);
+        `interrupted` marks an answer given before the question was fully read out."""
         session = await self.get(session_id)
         q = session.current
         if q is None:
             raise InvalidState("This interview has no open question")
         analysis = await self.assistant.analyse_answer(q.item_name, q.text, text)
-        await self.graph.add_answer(q.item_id, session.leaver, q.text, text, analysis.answer_type)
+        await self.graph.add_answer(q.item_id, session.leaver, q.text, text, analysis.answer_type,
+                                    source=source, interrupted=interrupted)
         new_items = await apply_extraction(
             self.graph, session.leaver, analysis, "interview", ref=session.id
         )
@@ -125,6 +91,25 @@ class InterviewService:
             "new_items": new_items,
             "next_question": next_question,
         }
+
+    async def amend(self, session_id: str, item_id: str, question: str, text: str, *,
+                    source: str = "interview") -> dict:
+        """Add to an answer that was already saved (the speaker kept talking while it was
+        being processed). Stored against the same item; the interview does not advance."""
+        session = await self.get(session_id)
+        item = await self.graph.item(item_id)
+        name = item["name"] if item else item_id
+        analysis = await self.assistant.analyse_answer(name, question, text)
+        await self.graph.add_answer(item_id, session.leaver, question, text, analysis.answer_type,
+                                    source=source)
+        new_items = await apply_extraction(
+            self.graph, session.leaver, analysis, "interview", ref=session.id
+        )
+        await self._save(session, {
+            "action": "amend", "item_id": item_id, "question": question, "answer": text,
+            "answer_type": analysis.answer_type, "is_follow_up": False, "new_items": new_items,
+        })
+        return {"stored_for": item_id, "answer_type": analysis.answer_type, "new_items": new_items}
 
     async def skip(self, session_id: str) -> dict:
         session = await self.get(session_id)

@@ -15,13 +15,14 @@ Schema
 Every node and edge written here carries provenance: source, source_ref,
 confidence, created_at. All access is async (falkordb.asyncio).
 """
-import os
 import time
 import uuid
 from dataclasses import dataclass
 
 from falkordb.asyncio import FalkorDB
 from redis.exceptions import ResponseError
+
+from knowledge_transfer.core.config import get_settings
 
 LABELS = {"system": "System", "decision": "Decision", "topic": "Topic"}
 TOUCH_RELS = {"OWNS", "WORKED_ON", "AUTHORED"}
@@ -47,13 +48,9 @@ class ItemState:
 
 class KnowledgeGraph:
     def __init__(self, db=None, graph_name: str | None = None):
-        self.db = db or FalkorDB(
-            host=os.getenv("FALKORDB_HOST", "localhost"),
-            port=int(os.getenv("FALKORDB_PORT", "6379")),
-        )
-        self.graph = self.db.select_graph(
-            graph_name or os.getenv("FALKORDB_KT_GRAPH", "knowledge_transfer")
-        )
+        settings = get_settings()
+        self.db = db or FalkorDB(host=settings.falkordb_host, port=settings.falkordb_port)
+        self.graph = self.db.select_graph(graph_name or settings.falkordb_graph)
 
     @classmethod
     async def connect(cls, db=None, graph_name: str | None = None) -> "KnowledgeGraph":
@@ -138,16 +135,18 @@ class KnowledgeGraph:
         )
 
     async def add_answer(self, item, person, question, text, kind="other",
-                   source="interview", confidence=0.8) -> str:
+                   source="interview", confidence=0.8, interrupted=False) -> str:
         id = uuid.uuid4().hex
         await self.graph.query(
             "MATCH (i:Item {id: $item}), (p:Person {id: $person}) "
             "CREATE (a:Answer {id: $id, text: $text, question: $q, kind: $kind, "
-            "source: $source, confidence: $conf, created_at: $now}) "
+            "source: $source, confidence: $conf, interrupted: $interrupted, "
+            "created_at: $now}) "
             "CREATE (a)-[:EXPLAINS {source: $source, created_at: $now}]->(i) "
             "CREATE (p)-[:GAVE]->(a)",
             {"item": item, "person": person, "id": id, "text": text, "q": question,
-             "kind": kind, "source": source, "conf": confidence, "now": _now()},
+             "kind": kind, "source": source, "conf": confidence,
+             "interrupted": interrupted, "now": _now()},
         )
         return id
 

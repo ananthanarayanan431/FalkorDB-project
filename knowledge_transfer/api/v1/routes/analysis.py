@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
-from knowledge_transfer import gaps
 from knowledge_transfer.api.deps import ServicesDep, resolve_leaver
 from knowledge_transfer.api.responses import ApiResponse, ok
+from knowledge_transfer.services import gaps
 
 router = APIRouter(tags=["analysis"])
 
