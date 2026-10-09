@@ -51,10 +51,13 @@ class LinkIn(BaseModel):
     dst: str
 
 
-class KnowsIn(BaseModel):
-    person: str
+class KnowsLevelIn(BaseModel):
     item: str
     level: int = Field(2, ge=1, le=3, description="1 aware, 2 working, 3 expert")
+
+
+class KnowsIn(KnowsLevelIn):
+    person: str
 
 
 class SourceBundle(BaseModel):

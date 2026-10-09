@@ -4,11 +4,43 @@ Mode A (`ingest_sources`): structured company data (tickets, docs, code ownershi
 Mode B (`ingest_braindump`): free text from the leaver, turned into items by an LLM.
 Either can run first, or both; items are merged by id.
 """
+from knowledge_transfer.errors import InvalidInput
 from knowledge_transfer.graph import KnowledgeGraph
 from knowledge_transfer.models import Extraction, SourceBundle, slug
 
 
+def unknown_references(graph: KnowledgeGraph, bundle: SourceBundle) -> list[dict]:
+    """References to people or items that are neither in the bundle nor in the graph.
+    Edges to them would be silently dropped by the MATCH in each write."""
+    people = {p.id for p in bundle.people}
+    items = {i.id for i in bundle.items}
+    refs: list[tuple[str, str, str]] = []  # (field, kind, id)
+    for n, d in enumerate(bundle.documents):
+        refs += [(f"documents[{n}].covers", "item", i) for i in d.covers]
+    for n, c in enumerate(bundle.contributions):
+        refs += [(f"contributions[{n}].person", "person", c.person),
+                 (f"contributions[{n}].item", "item", c.item)]
+    for n, link in enumerate(bundle.links):
+        refs += [(f"links[{n}].src", "item", link.src), (f"links[{n}].dst", "item", link.dst)]
+    for n, k in enumerate(bundle.knows):
+        refs += [(f"knows[{n}].person", "person", k.person), (f"knows[{n}].item", "item", k.item)]
+
+    exists: dict[tuple[str, str], bool] = {}
+    missing = []
+    for field, kind, id in refs:
+        if id in (people if kind == "person" else items):
+            continue
+        if (kind, id) not in exists:
+            lookup = graph.person if kind == "person" else graph.item
+            exists[kind, id] = lookup(id) is not None
+        if not exists[kind, id]:
+            missing.append({"field": field, "message": f"unknown {kind} {id!r}"})
+    return missing
+
+
 def ingest_sources(graph: KnowledgeGraph, bundle: SourceBundle) -> dict:
+    if missing := unknown_references(graph, bundle):
+        raise InvalidInput(f"Bundle references {len(missing)} unknown id(s); nothing was written", missing)
     for p in bundle.people:
         graph.upsert_person(p.id, p.name, p.role, p.seniority, p.status)
     for i in bundle.items:

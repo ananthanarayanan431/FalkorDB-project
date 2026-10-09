@@ -142,6 +142,13 @@ class KnowledgeGraph:
 
     # ---- reads ------------------------------------------------------------
 
+    def ping(self) -> bool:
+        try:
+            self.graph.ro_query("RETURN 1")
+            return True
+        except Exception:
+            return False
+
     def person(self, id):
         rows = self.graph.ro_query(
             "MATCH (p:Person {id: $id}) RETURN p.id, p.name, p.role, p.seniority, p.status",

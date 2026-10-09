@@ -1,9 +1,9 @@
 from fastapi import APIRouter, status
 
 from knowledge_transfer.api.deps import ServicesDep, require_person
-from knowledge_transfer.api.errors import NotFoundError
 from knowledge_transfer.api.responses import ApiResponse, ok
-from knowledge_transfer.models import KnowsIn, PersonIn
+from knowledge_transfer.errors import NotFound
+from knowledge_transfer.models import KnowsLevelIn, PersonIn
 
 router = APIRouter(prefix="/people", tags=["people"])
 
@@ -15,11 +15,11 @@ def post_person(person: PersonIn, services: ServicesDep) -> ApiResponse[PersonIn
 
 
 @router.put("/{person}/knows")
-def put_knows(person: str, knows: list[KnowsIn], services: ServicesDep) -> ApiResponse[dict]:
+def put_knows(person: str, knows: list[KnowsLevelIn], services: ServicesDep) -> ApiResponse[dict]:
     require_person(services, person)
     # Validate every item before writing so a bad entry leaves nothing half-applied.
     if missing := [k.item for k in knows if services.graph.item(k.item) is None]:
-        raise NotFoundError(f"Unknown item {missing[0]!r}", {"missing_items": missing})
+        raise NotFound(f"Unknown item {missing[0]!r}", {"missing_items": missing})
     for k in knows:
         services.graph.set_knows(person, k.item, k.level)
     return ok({"updated": len(knows)}, "Knowledge levels updated")

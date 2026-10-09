@@ -10,7 +10,8 @@ PREREQUISITE_OF edges. The receiver's seniority picks the strategy:
           one-line reading pointers.
 """
 from knowledge_transfer.assistant import Assistant
-from knowledge_transfer.gaps import _gap
+from knowledge_transfer.errors import NotFound
+from knowledge_transfer.gaps import gap_from_state
 from knowledge_transfer.graph import KnowledgeGraph
 
 KNOWN_LEVEL = 2  # KNOWS level at or above this counts as already known
@@ -56,9 +57,11 @@ def _descendants(ids: list[str], edges: list[tuple[str, str]]) -> dict[str, int]
 
 
 def build_plan(graph: KnowledgeGraph, assistant: Assistant, leaver: str, receiver: str) -> dict:
+    if graph.person(leaver) is None:
+        raise NotFound(f"Unknown person {leaver!r}")
     person = graph.person(receiver)
     if person is None:
-        raise KeyError(f"unknown person {receiver!r}")
+        raise NotFound(f"Unknown person {receiver!r}")
     junior = person["seniority"] == "junior"
     known = {i for i, lvl in graph.knows(receiver).items() if lvl >= KNOWN_LEVEL}
 
@@ -77,7 +80,7 @@ def build_plan(graph: KnowledgeGraph, assistant: Assistant, leaver: str, receive
     for i in wanted:
         s = states.get(i)
         has_answers, has_docs = bool(answers.get(i)), bool(docs.get(i))
-        risk = _gap(s).risk if s else 0
+        risk = gap_from_state(s).risk if s else 0
         # Documented items with no interview answer are reading; the rest is
         # knowledge that only exists in the leaver's head.
         mode = "read" if has_docs and not has_answers else "learn"

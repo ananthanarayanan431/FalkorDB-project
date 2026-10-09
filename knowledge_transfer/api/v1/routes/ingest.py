@@ -1,7 +1,6 @@
 from fastapi import APIRouter, status
 
 from knowledge_transfer.api.deps import ServicesDep, require_person
-from knowledge_transfer.api.errors import ServiceUnavailableError
 from knowledge_transfer.api.responses import ApiResponse, ok
 from knowledge_transfer.api.schemas import BrainDumpIn
 from knowledge_transfer.ingest import ingest_braindump, ingest_sources
@@ -24,8 +23,5 @@ def post_seed(services: ServicesDep) -> ApiResponse[dict]:
 @router.post("/braindump", status_code=status.HTTP_201_CREATED)
 def post_braindump(body: BrainDumpIn, services: ServicesDep) -> ApiResponse[dict]:
     require_person(services, body.person)
-    try:
-        result = ingest_braindump(services.graph, services.assistant, body.person, body.text)
-    except RuntimeError as e:
-        raise ServiceUnavailableError(str(e)) from e
+    result = ingest_braindump(services.graph, services.assistant, body.person, body.text)
     return ok(result, "Brain dump ingested")

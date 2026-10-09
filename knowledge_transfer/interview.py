@@ -9,6 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from knowledge_transfer.assistant import Assistant
+from knowledge_transfer.errors import InvalidState, NotFound
 from knowledge_transfer.gaps import open_gaps
 from knowledge_transfer.graph import KnowledgeGraph
 from knowledge_transfer.ingest import apply_extraction
@@ -45,22 +46,21 @@ class InterviewService:
 
     def start(self, leaver: str) -> tuple[Session, Question | None]:
         if self.graph.person(leaver) is None:
-            raise KeyError(f"unknown person {leaver!r}")
+            raise NotFound(f"Unknown person {leaver!r}")
         session = Session(uuid.uuid4().hex[:12], leaver)
         self.sessions[session.id] = session
         return session, self._advance(session)
 
     def get(self, session_id: str) -> Session:
-        try:
-            return self.sessions[session_id]
-        except KeyError:
-            raise KeyError(f"unknown interview {session_id!r}") from None
+        if (session := self.sessions.get(session_id)) is None:
+            raise NotFound(f"Unknown interview {session_id!r}")
+        return session
 
     def answer(self, session_id: str, text: str) -> dict:
         session = self.get(session_id)
         q = session.current
         if q is None:
-            raise ValueError("this interview has no open question")
+            raise InvalidState("This interview has no open question")
         analysis = self.assistant.analyse_answer(q.item_name, q.text, text)
         self.graph.add_answer(q.item_id, session.leaver, q.text, text, analysis.answer_type)
         new_items = apply_extraction(

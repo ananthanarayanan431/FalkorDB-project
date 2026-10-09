@@ -37,7 +37,7 @@ class Gap:
         return d
 
 
-def _gap(s: ItemState) -> Gap:
+def gap_from_state(s: ItemState) -> Gap:
     sole, undoc = s.other_people == 0, s.documents == 0
     reasons = []
     if sole:
@@ -53,7 +53,7 @@ def _gap(s: ItemState) -> Gap:
 
 def analyse(graph: KnowledgeGraph, leaver: str) -> list[Gap]:
     """All unique items of the leaver, highest risk first (open gaps before covered)."""
-    gaps = [g for g in map(_gap, graph.leaver_items(leaver)) if g.unique]
+    gaps = [g for g in map(gap_from_state,graph.leaver_items(leaver)) if g.unique]
     return sorted(gaps, key=lambda g: (not g.open, -g.risk, g.name))
 
 

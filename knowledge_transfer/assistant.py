@@ -1,16 +1,21 @@
 """The LLM-backed pieces. The graph decides *what* to ask and *what* to hand over;
 the LLM only extracts structure from free text and phrases things.
 
-Without an LLM, question writing and plan summaries fall back to templates, so
-the interview and handover still work. Free-text extraction needs an LLM.
+Without an LLM, or when a call fails, question writing and plan summaries fall
+back to templates, so the interview and handover still work. Free-text
+extraction needs an LLM and raises LLMUnavailable otherwise.
 """
+import logging
 import os
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
+from knowledge_transfer.errors import LLMUnavailable
 from knowledge_transfer.gaps import Gap
 from knowledge_transfer.models import AnswerAnalysis, Extraction
+
+log = logging.getLogger(__name__)
 
 BRAINDUMP_PROMPT = """You build a knowledge graph from an employee who is leaving the company.
 From their free-text description list the systems, decisions and topics they worked on.
@@ -55,39 +60,48 @@ class Assistant:
         return self.llm is not None
 
     def _structured(self, schema: type[BaseModel], system: str, human: str):
-        return self.llm.with_structured_output(schema).invoke(
-            [SystemMessage(system), HumanMessage(human)]
-        )
+        if not self.llm:
+            raise LLMUnavailable("No LLM configured (set OPENROUTER_API_KEY or OPENAI_API_KEY)")
+        try:
+            return self.llm.with_structured_output(schema).invoke(
+                [SystemMessage(system), HumanMessage(human)]
+            )
+        except Exception as e:  # provider/network errors vary by backend
+            raise LLMUnavailable(f"LLM call failed: {e}") from e
+
+    def _text(self, prompt: str) -> str | None:
+        """LLM free text, or None when there is no LLM or the call fails (callers fall back)."""
+        if not self.llm:
+            return None
+        try:
+            return str(self.llm.invoke([HumanMessage(prompt)]).content).strip() or None
+        except Exception:
+            log.warning("LLM call failed; using template fallback", exc_info=True)
+            return None
 
     def extract_braindump(self, text: str) -> Extraction:
-        if not self.llm:
-            raise RuntimeError("Brain-dump extraction needs an LLM (set OPENROUTER_API_KEY or OPENAI_API_KEY).")
         return self._structured(Extraction, BRAINDUMP_PROMPT, text)
 
     def analyse_answer(self, item: str, question: str, answer: str) -> AnswerAnalysis:
         if not self.llm:
             return AnswerAnalysis()
-        return self._structured(
-            AnswerAnalysis, ANSWER_PROMPT.format(item=item, question=question), answer
-        )
+        try:
+            return self._structured(
+                AnswerAnalysis, ANSWER_PROMPT.format(item=item, question=question), answer
+            )
+        except LLMUnavailable:
+            # The answer itself is still stored; only the classification is lost.
+            log.warning("answer analysis failed; storing answer unclassified", exc_info=True)
+            return AnswerAnalysis()
 
     def write_question(self, gap: Gap, related: dict) -> str:
         facts = _facts(gap, related)
-        if self.llm:
-            msg = self.llm.invoke(
-                [HumanMessage(QUESTION_PROMPT.format(item=gap.name, kind=gap.kind, facts="; ".join(facts)))]
-            )
-            if text := str(msg.content).strip():
-                return text
-        return template_question(gap, related)
+        prompt = QUESTION_PROMPT.format(item=gap.name, kind=gap.kind, facts="; ".join(facts))
+        return self._text(prompt) or template_question(gap, related)
 
     def summarise_plan(self, name: str, seniority: str, style: str, steps: list[str]) -> str:
-        if self.llm:
-            msg = self.llm.invoke([HumanMessage(SUMMARY_PROMPT.format(
-                name=name, seniority=seniority, style=style, steps=", ".join(steps)))])
-            if text := str(msg.content).strip():
-                return text
-        return f"{len(steps)} steps for {name}. {style}"
+        prompt = SUMMARY_PROMPT.format(name=name, seniority=seniority, style=style, steps=", ".join(steps))
+        return self._text(prompt) or f"{len(steps)} steps for {name}. {style}"
 
 
 def _facts(gap: Gap, related: dict) -> list[str]:
