@@ -9,7 +9,7 @@ from knowledge_transfer.graph import KnowledgeGraph
 from knowledge_transfer.models import Extraction, SourceBundle, slug
 
 
-def unknown_references(graph: KnowledgeGraph, bundle: SourceBundle) -> list[dict]:
+async def unknown_references(graph: KnowledgeGraph, bundle: SourceBundle) -> list[dict]:
     """References to people or items that are neither in the bundle nor in the graph.
     Edges to them would be silently dropped by the MATCH in each write."""
     people = {p.id for p in bundle.people}
@@ -32,27 +32,27 @@ def unknown_references(graph: KnowledgeGraph, bundle: SourceBundle) -> list[dict
             continue
         if (kind, id) not in exists:
             lookup = graph.person if kind == "person" else graph.item
-            exists[kind, id] = lookup(id) is not None
+            exists[kind, id] = await lookup(id) is not None
         if not exists[kind, id]:
             missing.append({"field": field, "message": f"unknown {kind} {id!r}"})
     return missing
 
 
-def ingest_sources(graph: KnowledgeGraph, bundle: SourceBundle) -> dict:
-    if missing := unknown_references(graph, bundle):
+async def ingest_sources(graph: KnowledgeGraph, bundle: SourceBundle) -> dict:
+    if missing := await unknown_references(graph, bundle):
         raise InvalidInput(f"Bundle references {len(missing)} unknown id(s); nothing was written", missing)
     for p in bundle.people:
-        graph.upsert_person(p.id, p.name, p.role, p.seniority, p.status)
+        await graph.upsert_person(p.id, p.name, p.role, p.seniority, p.status)
     for i in bundle.items:
-        graph.upsert_item(i.id, i.name, i.kind, i.description, source="doc")
+        await graph.upsert_item(i.id, i.name, i.kind, i.description, source="doc")
     for d in bundle.documents:
-        graph.upsert_document(d.id, d.title, d.covers)
+        await graph.upsert_document(d.id, d.title, d.covers)
     for c in bundle.contributions:
-        graph.link_touch(c.person, c.item, c.rel, c.source, c.ref)
+        await graph.link_touch(c.person, c.item, c.rel, c.source, c.ref)
     for link in bundle.links:
-        graph.link_items(link.src, link.rel, link.dst)
+        await graph.link_items(link.src, link.rel, link.dst)
     for k in bundle.knows:
-        graph.set_knows(k.person, k.item, k.level)
+        await graph.set_knows(k.person, k.item, k.level)
     return {
         "people": len(bundle.people), "items": len(bundle.items),
         "documents": len(bundle.documents), "contributions": len(bundle.contributions),
@@ -60,7 +60,7 @@ def ingest_sources(graph: KnowledgeGraph, bundle: SourceBundle) -> dict:
     }
 
 
-def apply_extraction(graph: KnowledgeGraph, person: str, extraction: Extraction,
+async def apply_extraction(graph: KnowledgeGraph, person: str, extraction: Extraction,
                      source: str, ref: str = "", confidence: float = 0.7) -> list[str]:
     """Write LLM-extracted items. Returns the ids of items that did not exist before."""
     created: list[str] = []
@@ -68,26 +68,26 @@ def apply_extraction(graph: KnowledgeGraph, person: str, extraction: Extraction,
         id = slug(it.name)
         if not id:
             continue
-        if graph.item(id) is None:
+        if await graph.item(id) is None:
             created.append(id)
-        graph.upsert_item(id, it.name, it.kind, it.description, source, ref, confidence)
-        graph.link_touch(person, id, "OWNS" if it.owned else "WORKED_ON", source, ref, confidence)
+        await graph.upsert_item(id, it.name, it.kind, it.description, source, ref, confidence)
+        await graph.link_touch(person, id, "OWNS" if it.owned else "WORKED_ON", source, ref, confidence)
         for dep in it.depends_on:
             if dep_id := slug(dep):
-                if graph.item(dep_id) is None:
-                    graph.upsert_item(dep_id, dep, "topic", "", source, ref, confidence)
+                if await graph.item(dep_id) is None:
+                    await graph.upsert_item(dep_id, dep, "topic", "", source, ref, confidence)
                     created.append(dep_id)
-                graph.link_items(id, "DEPENDS_ON", dep_id, source, ref, confidence)
+                await graph.link_items(id, "DEPENDS_ON", dep_id, source, ref, confidence)
         for pre in it.prerequisites:
             if pre_id := slug(pre):
-                if graph.item(pre_id) is None:
-                    graph.upsert_item(pre_id, pre, "topic", "", source, ref, confidence)
+                if await graph.item(pre_id) is None:
+                    await graph.upsert_item(pre_id, pre, "topic", "", source, ref, confidence)
                     created.append(pre_id)
-                graph.link_items(pre_id, "PREREQUISITE_OF", id, source, ref, confidence)
+                await graph.link_items(pre_id, "PREREQUISITE_OF", id, source, ref, confidence)
     return created
 
 
-def ingest_braindump(graph: KnowledgeGraph, assistant, person: str, text: str) -> dict:
-    extraction = assistant.extract_braindump(text)
-    created = apply_extraction(graph, person, extraction, "braindump")
+async def ingest_braindump(graph: KnowledgeGraph, assistant, person: str, text: str) -> dict:
+    extraction = await assistant.extract_braindump(text)
+    created = await apply_extraction(graph, person, extraction, "braindump")
     return {"items_found": len(extraction.items), "new_items": created}

@@ -13,5 +13,23 @@ services:
       timeout: 3s
       retries: 15
 
+  postgres:
+    image: postgres:17
+    container_name: kt-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kt}
+      POSTGRES_DB: ${POSTGRES_DB:-knowledge_transfer}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
 volumes:
   falkordb_data:
+  postgres_data:

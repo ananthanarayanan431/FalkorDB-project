@@ -56,25 +56,25 @@ def _descendants(ids: list[str], edges: list[tuple[str, str]]) -> dict[str, int]
     return {i: count(i) for i in ids}
 
 
-def build_plan(graph: KnowledgeGraph, assistant: Assistant, leaver: str, receiver: str) -> dict:
-    if graph.person(leaver) is None:
+async def build_plan(graph: KnowledgeGraph, assistant: Assistant, leaver: str, receiver: str) -> dict:
+    if await graph.person(leaver) is None:
         raise NotFound(f"Unknown person {leaver!r}")
-    person = graph.person(receiver)
+    person = await graph.person(receiver)
     if person is None:
         raise NotFound(f"Unknown person {receiver!r}")
     junior = person["seniority"] == "junior"
-    known = {i for i, lvl in graph.knows(receiver).items() if lvl >= KNOWN_LEVEL}
+    known = {i for i, lvl in (await graph.knows(receiver)).items() if lvl >= KNOWN_LEVEL}
 
-    states = {s.id: s for s in graph.leaver_items(leaver)}
+    states = {s.id: s for s in await graph.leaver_items(leaver)}
     delta = [i for i in states if i not in known]
     if junior:
-        wanted = [i for i in graph.with_prerequisites(delta) if i not in known]
+        wanted = [i for i in await graph.with_prerequisites(delta) if i not in known]
     else:
         wanted = delta
 
-    answers = graph.answers_for(wanted)
-    docs = graph.documents_for(wanted)
-    details = graph.items_by_id(wanted)
+    answers = await graph.answers_for(wanted)
+    docs = await graph.documents_for(wanted)
+    details = await graph.items_by_id(wanted)
 
     steps_meta: dict[str, dict] = {}
     for i in wanted:
@@ -87,7 +87,7 @@ def build_plan(graph: KnowledgeGraph, assistant: Assistant, leaver: str, receive
         steps_meta[i] = {"mode": mode, "risk": risk}
 
     ids = list(steps_meta)
-    edges = graph.prerequisite_edges(ids)
+    edges = await graph.prerequisite_edges(ids)
     if junior:
         # Most foundational first: the more steps build on an item, the earlier it goes.
         reach = _descendants(ids, edges)
@@ -120,7 +120,7 @@ def build_plan(graph: KnowledgeGraph, assistant: Assistant, leaver: str, receive
         "Foundations first, each step builds on the previous one."
         if junior else "Only what you do not already know and cannot find in the docs."
     )
-    summary = assistant.summarise_plan(
+    summary = await assistant.summarise_plan(
         person["name"], person["seniority"], style, [s["name"] for s in steps]
     )
     return {

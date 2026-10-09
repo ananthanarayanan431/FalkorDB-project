@@ -16,5 +16,17 @@ Tests run against an embedded FalkorDB: `make test`.
 
 Every response is `{"success": true, "message", "data"}` or
 `{"success": false, "message", "error": {"code", "details"}}`.
-`POST /api/v1/admin/reset` wipes the graph and needs `X-Admin-Token` matching `KT_ADMIN_TOKEN`
-(disabled while that is unset). Interview sessions are stored in FalkorDB, so they survive restarts.
+`POST /api/v1/reset` wipes the graph and stored results. The API has no authentication.
+
+### Storage
+
+- **FalkorDB**: the knowledge graph (people, items, documents, interview answers).
+- **Postgres** (`knowledge_transfer/db/`, SQLAlchemy async + asyncpg): interview sessions and their
+  turn-by-turn transcripts (`GET /interviews/{id}`), and saved handover plans
+  (`POST/GET /handover-plans`). `GET /handover/{receiver}` previews a plan without saving it.
+
+`DATABASE_URL` defaults to the compose database
+(`postgresql+asyncpg://kt:kt@localhost:5432/knowledge_transfer`). Schema changes go through Alembic:
+edit `knowledge_transfer/db/models.py`, run `make revision m="what changed"`, review the file in
+`migrations/versions/`, then `make migrate`. Tests use SQLite unless `TEST_DATABASE_URL` points at a
+Postgres database (its tables are dropped and recreated).

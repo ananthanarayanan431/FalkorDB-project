@@ -49,34 +49,34 @@ class Assistant:
     def has_llm(self) -> bool:
         return self.llm is not None
 
-    def _structured(self, schema: type[BaseModel], system: str, human: str):
+    async def _structured(self, schema: type[BaseModel], system: str, human: str):
         if not self.llm:
             raise LLMUnavailable("No LLM configured (set OPENROUTER_API_KEY or OPENAI_API_KEY)")
         try:
-            return self.llm.with_structured_output(schema).invoke(
+            return await self.llm.with_structured_output(schema).ainvoke(
                 [SystemMessage(system), HumanMessage(human)]
             )
         except Exception as e:  # provider/network errors vary by backend
             raise LLMUnavailable(f"LLM call failed: {e}") from e
 
-    def _text(self, prompt: str) -> str | None:
+    async def _text(self, prompt: str) -> str | None:
         """LLM free text, or None when there is no LLM or the call fails (callers fall back)."""
         if not self.llm:
             return None
         try:
-            return str(self.llm.invoke([HumanMessage(prompt)]).content).strip() or None
+            return str((await self.llm.ainvoke([HumanMessage(prompt)])).content).strip() or None
         except Exception:
             log.warning("LLM call failed; using template fallback", exc_info=True)
             return None
 
-    def extract_braindump(self, text: str) -> Extraction:
-        return self._structured(Extraction, BRAINDUMP_PROMPT, text)
+    async def extract_braindump(self, text: str) -> Extraction:
+        return await self._structured(Extraction, BRAINDUMP_PROMPT, text)
 
-    def analyse_answer(self, item: str, question: str, answer: str) -> AnswerAnalysis:
+    async def analyse_answer(self, item: str, question: str, answer: str) -> AnswerAnalysis:
         if not self.llm:
             return AnswerAnalysis()
         try:
-            return self._structured(
+            return await self._structured(
                 AnswerAnalysis, ANSWER_PROMPT.format(item=item, question=question), answer
             )
         except LLMUnavailable:
@@ -84,14 +84,14 @@ class Assistant:
             log.warning("answer analysis failed; storing answer unclassified", exc_info=True)
             return AnswerAnalysis()
 
-    def write_question(self, gap: Gap, related: dict) -> str:
+    async def write_question(self, gap: Gap, related: dict) -> str:
         facts = _facts(gap, related)
         prompt = QUESTION_PROMPT.format(item=gap.name, kind=gap.kind, facts="; ".join(facts))
-        return self._text(prompt) or template_question(gap, related)
+        return await self._text(prompt) or template_question(gap, related)
 
-    def summarise_plan(self, name: str, seniority: str, style: str, steps: list[str]) -> str:
+    async def summarise_plan(self, name: str, seniority: str, style: str, steps: list[str]) -> str:
         prompt = SUMMARY_PROMPT.format(name=name, seniority=seniority, style=style, steps=", ".join(steps))
-        return self._text(prompt) or f"{len(steps)} steps for {name}. {style}"
+        return await self._text(prompt) or f"{len(steps)} steps for {name}. {style}"
 
 
 def _facts(gap: Gap, related: dict) -> list[str]:

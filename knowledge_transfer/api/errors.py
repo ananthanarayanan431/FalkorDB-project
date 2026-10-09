@@ -40,16 +40,6 @@ class BadRequestError(ApiError):
     code = "BAD_REQUEST"
 
 
-class UnauthorizedError(ApiError):
-    status_code = status.HTTP_401_UNAUTHORIZED
-    code = "UNAUTHORIZED"
-
-
-class ForbiddenError(ApiError):
-    status_code = status.HTTP_403_FORBIDDEN
-    code = "FORBIDDEN"
-
-
 class ServiceUnavailableError(ApiError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "SERVICE_UNAVAILABLE"
@@ -64,8 +54,6 @@ DOMAIN_ERRORS: dict[type[KnowledgeTransferError], tuple[int, str]] = {
 
 HTTP_CODES = {
     400: "BAD_REQUEST",
-    401: "UNAUTHORIZED",
-    403: "FORBIDDEN",
     404: "NOT_FOUND",
     405: "METHOD_NOT_ALLOWED",
     409: "CONFLICT",

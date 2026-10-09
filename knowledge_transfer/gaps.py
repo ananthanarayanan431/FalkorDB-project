@@ -51,18 +51,18 @@ def gap_from_state(s: ItemState) -> Gap:
                s.answers, risk, reasons)
 
 
-def analyse(graph: KnowledgeGraph, leaver: str) -> list[Gap]:
+async def analyse(graph: KnowledgeGraph, leaver: str) -> list[Gap]:
     """All unique items of the leaver, highest risk first (open gaps before covered)."""
-    gaps = [g for g in map(gap_from_state,graph.leaver_items(leaver)) if g.unique]
+    gaps = [g for g in map(gap_from_state, await graph.leaver_items(leaver)) if g.unique]
     return sorted(gaps, key=lambda g: (not g.open, -g.risk, g.name))
 
 
-def open_gaps(graph: KnowledgeGraph, leaver: str) -> list[Gap]:
-    return [g for g in analyse(graph, leaver) if g.open]
+async def open_gaps(graph: KnowledgeGraph, leaver: str) -> list[Gap]:
+    return [g for g in await analyse(graph, leaver) if g.open]
 
 
-def coverage(graph: KnowledgeGraph, leaver: str) -> dict:
-    gaps = analyse(graph, leaver)
+async def coverage(graph: KnowledgeGraph, leaver: str) -> dict:
+    gaps = await analyse(graph, leaver)
     covered = [g for g in gaps if not g.open]
     total_risk = sum(g.risk for g in gaps) or 1
     return {

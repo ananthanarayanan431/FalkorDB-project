@@ -11,17 +11,16 @@ Schema
   (Item)-[:PREREQUISITE_OF]->(Item)                learn the source before the target
   (Item)-[:DOCUMENTED_BY]->(Document)
   (Answer)-[:EXPLAINS]->(Item), (Person)-[:GAVE]->(Answer)
-  (:Interview {id, leaver, state, version})        interview session; state is JSON
 
 Every node and edge written here carries provenance: source, source_ref,
-confidence, created_at.
+confidence, created_at. All access is async (falkordb.asyncio).
 """
 import os
 import time
 import uuid
 from dataclasses import dataclass
 
-from falkordb import FalkorDB
+from falkordb.asyncio import FalkorDB
 from redis.exceptions import ResponseError
 
 LABELS = {"system": "System", "decision": "Decision", "topic": "Topic"}
@@ -55,25 +54,39 @@ class KnowledgeGraph:
         self.graph = self.db.select_graph(
             graph_name or os.getenv("FALKORDB_KT_GRAPH", "knowledge_transfer")
         )
-        for label in ("Person", "Item", "Document", "Answer", "Interview"):
+
+    @classmethod
+    async def connect(cls, db=None, graph_name: str | None = None) -> "KnowledgeGraph":
+        graph = cls(db, graph_name)
+        await graph.ensure_indexes()
+        return graph
+
+    async def ensure_indexes(self) -> None:
+        for label in ("Person", "Item", "Document", "Answer"):
             try:
-                self.graph.query(f"CREATE INDEX FOR (n:{label}) ON (n.id)")
+                await self.graph.query(f"CREATE INDEX FOR (n:{label}) ON (n.id)")
             except ResponseError:
                 pass  # index already exists
 
+    async def aclose(self) -> None:
+        await self.db.aclose()
+
+    async def _rows(self, query: str, params: dict | None = None) -> list[list]:
+        return (await self.graph.ro_query(query, params)).result_set
+
     # ---- writes -----------------------------------------------------------
 
-    def upsert_person(self, id, name, role="", seniority="mid", status="active"):
-        self.graph.query(
+    async def upsert_person(self, id, name, role="", seniority="mid", status="active"):
+        await self.graph.query(
             "MERGE (p:Person {id: $id}) "
             "SET p.name = $name, p.role = $role, p.seniority = $seniority, p.status = $status",
             {"id": id, "name": name, "role": role, "seniority": seniority, "status": status},
         )
 
-    def upsert_item(self, id, name, kind="topic", description="",
+    async def upsert_item(self, id, name, kind="topic", description="",
                     source="doc", source_ref="", confidence=1.0):
         label = LABELS[kind]
-        self.graph.query(
+        await self.graph.query(
             "MERGE (i:Item {id: $id}) "
             "ON CREATE SET i.source = $source, i.source_ref = $ref, "
             "i.confidence = $conf, i.created_at = $now "
@@ -84,22 +97,22 @@ class KnowledgeGraph:
              "source": source, "ref": source_ref, "conf": confidence, "now": _now()},
         )
 
-    def upsert_document(self, id, title, covers=(), source="doc"):
-        self.graph.query(
+    async def upsert_document(self, id, title, covers=(), source="doc"):
+        await self.graph.query(
             "MERGE (d:Document {id: $id}) SET d.title = $title, d.source = $source",
             {"id": id, "title": title, "source": source},
         )
         for item in covers:
-            self.graph.query(
+            await self.graph.query(
                 "MATCH (i:Item {id: $item}), (d:Document {id: $doc}) "
                 "MERGE (i)-[r:DOCUMENTED_BY]->(d) "
                 "ON CREATE SET r.source = $source, r.created_at = $now",
                 {"item": item, "doc": id, "source": source, "now": _now()},
             )
 
-    def link_touch(self, person, item, rel="WORKED_ON", source="ticket", ref="", confidence=1.0):
+    async def link_touch(self, person, item, rel="WORKED_ON", source="ticket", ref="", confidence=1.0):
         assert rel in TOUCH_RELS, rel
-        self.graph.query(
+        await self.graph.query(
             f"MATCH (p:Person {{id: $p}}), (i:Item {{id: $i}}) MERGE (p)-[r:{rel}]->(i) "
             "ON CREATE SET r.source = $source, r.source_ref = $ref, "
             "r.confidence = $conf, r.created_at = $now",
@@ -107,9 +120,9 @@ class KnowledgeGraph:
              "conf": confidence, "now": _now()},
         )
 
-    def link_items(self, src, rel, dst, source="doc", ref="", confidence=1.0):
+    async def link_items(self, src, rel, dst, source="doc", ref="", confidence=1.0):
         assert rel in LINK_RELS, rel
-        self.graph.query(
+        await self.graph.query(
             f"MATCH (a:Item {{id: $a}}), (b:Item {{id: $b}}) MERGE (a)-[r:{rel}]->(b) "
             "ON CREATE SET r.source = $source, r.source_ref = $ref, "
             "r.confidence = $conf, r.created_at = $now",
@@ -117,17 +130,17 @@ class KnowledgeGraph:
              "conf": confidence, "now": _now()},
         )
 
-    def set_knows(self, person, item, level=2):
-        self.graph.query(
+    async def set_knows(self, person, item, level=2):
+        await self.graph.query(
             "MATCH (p:Person {id: $p}), (i:Item {id: $i}) MERGE (p)-[r:KNOWS]->(i) "
             "SET r.level = $level, r.source = 'profile', r.updated_at = $now",
             {"p": person, "i": item, "level": level, "now": _now()},
         )
 
-    def add_answer(self, item, person, question, text, kind="other",
+    async def add_answer(self, item, person, question, text, kind="other",
                    source="interview", confidence=0.8) -> str:
         id = uuid.uuid4().hex
-        self.graph.query(
+        await self.graph.query(
             "MATCH (i:Item {id: $item}), (p:Person {id: $person}) "
             "CREATE (a:Answer {id: $id, text: $text, question: $q, kind: $kind, "
             "source: $source, confidence: $conf, created_at: $now}) "
@@ -138,62 +151,46 @@ class KnowledgeGraph:
         )
         return id
 
-    def create_interview(self, id: str, leaver: str, state: str) -> None:
-        self.graph.query(
-            "CREATE (:Interview {id: $id, leaver: $leaver, state: $state, version: 0, "
-            "created_at: $now, updated_at: $now})",
-            {"id": id, "leaver": leaver, "state": state, "now": _now()},
-        )
-
-    def save_interview(self, id: str, state: str, expected_version: int) -> bool:
-        """Compare-and-set on `version`; False when another writer saved first."""
-        rows = self.graph.query(
-            "MATCH (s:Interview {id: $id}) WHERE s.version = $v "
-            "SET s.state = $state, s.version = $v + 1, s.updated_at = $now RETURN s.id",
-            {"id": id, "state": state, "v": expected_version, "now": _now()},
-        ).result_set
-        return bool(rows)
-
-    def reset(self):
-        self.graph.query("MATCH (n) DETACH DELETE n")
+    async def reset(self):
+        await self.graph.query("MATCH (n) DETACH DELETE n")
 
     # ---- reads ------------------------------------------------------------
 
-    def ping(self) -> bool:
+    async def ping(self) -> bool:
         try:
-            self.graph.ro_query("RETURN 1")
+            await self._rows("RETURN 1")
             return True
         except Exception:
             return False
 
-    def person(self, id):
-        rows = self.graph.ro_query(
+    async def person(self, id):
+        rows = await self._rows(
             "MATCH (p:Person {id: $id}) RETURN p.id, p.name, p.role, p.seniority, p.status",
             {"id": id},
-        ).result_set
+        )
         if not rows:
             return None
         return dict(zip(("id", "name", "role", "seniority", "status"), rows[0]))
 
-    def leaving_person(self):
-        rows = self.graph.ro_query(
+    async def leaving_person(self):
+        rows = await self._rows(
             "MATCH (p:Person {status: 'leaving'}) RETURN p.id ORDER BY p.id LIMIT 1"
-        ).result_set
+        )
         return rows[0][0] if rows else None
 
-    def item(self, id):
-        rows = self.graph.ro_query(
+    async def item(self, id):
+        rows = await self._rows(
             "MATCH (i:Item {id: $id}) RETURN i.id, i.name, i.kind, i.description",
             {"id": id},
-        ).result_set
+        )
         if not rows:
             return None
         return dict(zip(("id", "name", "kind", "description"), rows[0]))
 
-    def leaver_items(self, leaver) -> list[ItemState]:
+    async def leaver_items(self, leaver) -> list[ItemState]:
         """Everything the leaver touched, with who else touched it, whether it is
         documented, how many interview answers explain it, and what depends on it."""
-        rows = self.graph.ro_query(
+        rows = await self._rows(
             "MATCH (l:Person {id: $leaver})-[:OWNS|WORKED_ON|AUTHORED]->(i:Item) "
             "WITH DISTINCT i "
             "OPTIONAL MATCH (o:Person)-[:OWNS|WORKED_ON|AUTHORED]->(i) WHERE o.id <> $leaver "
@@ -206,12 +203,12 @@ class KnowledgeGraph:
             "RETURN i.id, i.name, i.kind, i.description, others, docs, answers, "
             "count(DISTINCT x)",
             {"leaver": leaver},
-        ).result_set
+        )
         return [ItemState(*r) for r in rows]
 
-    def related(self, item_id):
+    async def related(self, item_id):
         """Neighbouring items and documents, used as context for questions."""
-        r = self.graph.ro_query(
+        rows = await self._rows(
             "MATCH (i:Item {id: $id}) "
             "OPTIONAL MATCH (i)-[:DEPENDS_ON]->(dep:Item) "
             "OPTIONAL MATCH (user:Item)-[:DEPENDS_ON]->(i) "
@@ -219,56 +216,57 @@ class KnowledgeGraph:
             "RETURN collect(DISTINCT dep.name), collect(DISTINCT user.name), "
             "collect(DISTINCT doc.title)",
             {"id": item_id},
-        ).result_set[0]
+        )
+        r = rows[0]
         return {"depends_on": r[0], "used_by": r[1], "documents": r[2]}
 
-    def knows(self, person) -> dict[str, int]:
-        rows = self.graph.ro_query(
+    async def knows(self, person) -> dict[str, int]:
+        rows = await self._rows(
             "MATCH (:Person {id: $p})-[k:KNOWS]->(i:Item) RETURN i.id, k.level", {"p": person}
-        ).result_set
+        )
         return {r[0]: r[1] for r in rows}
 
-    def with_prerequisites(self, ids: list[str]) -> set[str]:
+    async def with_prerequisites(self, ids: list[str]) -> set[str]:
         """`ids` plus everything that must be understood first (transitively)."""
-        rows = self.graph.ro_query(
+        rows = await self._rows(
             "MATCH (p:Item)-[:PREREQUISITE_OF*1..10]->(i:Item) WHERE i.id IN $ids "
             "RETURN DISTINCT p.id",
             {"ids": ids},
-        ).result_set
+        )
         return set(ids) | {r[0] for r in rows}
 
-    def prerequisite_edges(self, ids: list[str]) -> list[tuple[str, str]]:
-        rows = self.graph.ro_query(
+    async def prerequisite_edges(self, ids: list[str]) -> list[tuple[str, str]]:
+        rows = await self._rows(
             "MATCH (a:Item)-[:PREREQUISITE_OF]->(b:Item) "
             "WHERE a.id IN $ids AND b.id IN $ids RETURN a.id, b.id",
             {"ids": ids},
-        ).result_set
+        )
         return [(r[0], r[1]) for r in rows]
 
-    def items_by_id(self, ids: list[str]) -> dict[str, dict]:
-        rows = self.graph.ro_query(
+    async def items_by_id(self, ids: list[str]) -> dict[str, dict]:
+        rows = await self._rows(
             "MATCH (i:Item) WHERE i.id IN $ids RETURN i.id, i.name, i.kind, i.description",
             {"ids": ids},
-        ).result_set
+        )
         return {r[0]: dict(zip(("id", "name", "kind", "description"), r)) for r in rows}
 
-    def documents_for(self, ids: list[str]) -> dict[str, list[str]]:
-        rows = self.graph.ro_query(
+    async def documents_for(self, ids: list[str]) -> dict[str, list[str]]:
+        rows = await self._rows(
             "MATCH (i:Item)-[:DOCUMENTED_BY]->(d:Document) WHERE i.id IN $ids "
             "RETURN i.id, d.title",
             {"ids": ids},
-        ).result_set
+        )
         out: dict[str, list[str]] = {}
         for item, title in rows:
             out.setdefault(item, []).append(title)
         return out
 
-    def answers_for(self, ids: list[str]) -> dict[str, list[dict]]:
-        rows = self.graph.ro_query(
+    async def answers_for(self, ids: list[str]) -> dict[str, list[dict]]:
+        rows = await self._rows(
             "MATCH (a:Answer)-[:EXPLAINS]->(i:Item) WHERE i.id IN $ids "
             "RETURN i.id, a.text, a.kind, a.source, a.created_at ORDER BY a.created_at",
             {"ids": ids},
-        ).result_set
+        )
         out: dict[str, list[dict]] = {}
         for item, text, kind, source, ts in rows:
             out.setdefault(item, []).append(
@@ -276,21 +274,14 @@ class KnowledgeGraph:
             )
         return out
 
-    def interview(self, id: str) -> tuple[str, int] | None:
-        """(state JSON, version) of an interview session."""
-        rows = self.graph.ro_query(
-            "MATCH (s:Interview {id: $id}) RETURN s.state, s.version", {"id": id}
-        ).result_set
-        return (rows[0][0], rows[0][1]) if rows else None
-
-    def export(self):
+    async def export(self):
         """Nodes and edges for a graph visualisation."""
-        nodes = self.graph.ro_query(
-            "MATCH (n) WHERE NOT n:Interview RETURN n.id, labels(n), coalesce(n.name, n.title, n.kind), n.status"
-        ).result_set
-        edges = self.graph.ro_query(
+        nodes = await self._rows(
+            "MATCH (n) RETURN n.id, labels(n), coalesce(n.name, n.title, n.kind), n.status"
+        )
+        edges = await self._rows(
             "MATCH (a)-[r]->(b) RETURN a.id, type(r), b.id"
-        ).result_set
+        )
         return {
             "nodes": [{"id": n[0], "labels": n[1], "name": n[2], "status": n[3]} for n in nodes],
             "edges": [{"src": e[0], "rel": e[1], "dst": e[2]} for e in edges],

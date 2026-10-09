@@ -11,5 +11,10 @@ class StartInterviewIn(BaseModel):
     leaver: str | None = None
 
 
+class HandoverPlanIn(BaseModel):
+    receiver: str = Field(min_length=1)
+    leaver: str | None = None
+
+
 class AnswerIn(BaseModel):
     answer: str = Field(min_length=1)

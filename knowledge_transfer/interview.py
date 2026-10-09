@@ -5,12 +5,14 @@ question from the item's graph context, store the answer linked to the item it
 explains, and add anything new the answer mentions as items. New items have no
 documentation, so they surface as fresh gaps and drive later questions.
 
-Sessions are stored in the graph as (:Interview) nodes, so they survive restarts
-and are shared between workers. Saves are compare-and-set on a version number.
+Sessions live in an `InterviewStore` (Postgres in production, see
+knowledge_transfer.db), so they survive restarts and are shared between workers.
+Saves are compare-and-set on a version number, and each answer or skip is
+recorded as a transcript turn in the same save.
 """
-import json
 import uuid
 from dataclasses import asdict, dataclass, field
+from typing import Any, Protocol
 
 from knowledge_transfer.assistant import Assistant
 from knowledge_transfer.errors import InvalidState, NotFound
@@ -42,51 +44,68 @@ class Session:
     turns: int = 0
     version: int = 0
 
-    def to_json(self) -> str:
+    @property
+    def status(self) -> str:
+        return "active" if self.current else "completed"
+
+    def to_state(self) -> dict[str, Any]:
         d = asdict(self)
         d["skipped"] = sorted(self.skipped)
         del d["id"], d["version"]
-        return json.dumps(d)
+        return d
 
     @classmethod
-    def from_json(cls, id: str, state: str, version: int) -> "Session":
-        d = json.loads(state)
+    def from_state(cls, id: str, d: dict[str, Any], version: int) -> "Session":
         current = Question(**d["current"]) if d["current"] else None
         return cls(id, d["leaver"], current, [Question(**q) for q in d["follow_ups"]],
                    set(d["skipped"]), d["turns"], version)
 
 
+class InterviewStore(Protocol):
+    async def create(self, session: Session) -> None: ...
+    async def get(self, id: str) -> Session | None: ...
+    async def save(self, session: Session, turn: dict[str, Any] | None = None) -> bool:
+        """Compare-and-set on session.version; False when another writer saved first."""
+        ...
+    async def transcript(self, id: str) -> list[dict[str, Any]]: ...
+
+
 class InterviewService:
-    def __init__(self, graph: KnowledgeGraph, assistant: Assistant):
+    def __init__(self, graph: KnowledgeGraph, assistant: Assistant, store: InterviewStore):
         self.graph = graph
         self.assistant = assistant
+        self.store = store
 
-    def start(self, leaver: str) -> tuple[Session, Question | None]:
-        if self.graph.person(leaver) is None:
+    async def start(self, leaver: str) -> tuple[Session, Question | None]:
+        if await self.graph.person(leaver) is None:
             raise NotFound(f"Unknown person {leaver!r}")
         session = Session(uuid.uuid4().hex[:12], leaver)
-        q = self._advance(session)
-        self.graph.create_interview(session.id, leaver, session.to_json())
+        q = await self._advance(session)
+        await self.store.create(session)
         return session, q
 
-    def get(self, session_id: str) -> Session:
-        if (found := self.graph.interview(session_id)) is None:
+    async def get(self, session_id: str) -> Session:
+        if (session := await self.store.get(session_id)) is None:
             raise NotFound(f"Unknown interview {session_id!r}")
-        return Session.from_json(session_id, *found)
+        return session
 
-    def _save(self, session: Session) -> None:
-        if not self.graph.save_interview(session.id, session.to_json(), session.version):
+    async def transcript(self, session_id: str) -> list[dict[str, Any]]:
+        await self.get(session_id)
+        return await self.store.transcript(session_id)
+
+    async def _save(self, session: Session, turn: dict[str, Any] | None = None) -> None:
+        if not await self.store.save(session, turn):
             raise InvalidState("Interview was updated by another request; fetch it and retry")
         session.version += 1
 
-    def answer(self, session_id: str, text: str) -> dict:
-        session = self.get(session_id)
+    async def answer(self, session_id: str, text: str) -> dict:
+        session = await self.get(session_id)
         q = session.current
         if q is None:
             raise InvalidState("This interview has no open question")
-        analysis = self.assistant.analyse_answer(q.item_name, q.text, text)
-        self.graph.add_answer(q.item_id, session.leaver, q.text, text, analysis.answer_type)
-        new_items = apply_extraction(
+        analysis = await self.assistant.analyse_answer(q.item_name, q.text, text)
+        await self.graph.add_answer(q.item_id, session.leaver, q.text, text, analysis.answer_type)
+        new_items = await apply_extraction(
             self.graph, session.leaver, analysis, "interview", ref=session.id
         )
         # Follow-ups are asked about the item the answer was about.
@@ -95,8 +114,11 @@ class InterviewService:
                 Question(q.item_id, q.item_name, analysis.follow_up, ["follow-up to previous answer"], q.risk, True)
             )
         session.turns += 1
-        next_question = self._advance_dict(session)
-        self._save(session)
+        next_question = await self._advance_dict(session)
+        await self._save(session, {
+            "action": "answer", "item_id": q.item_id, "question": q.text, "answer": text,
+            "answer_type": analysis.answer_type, "is_follow_up": q.is_follow_up, "new_items": new_items,
+        })
         return {
             "stored_for": q.item_id,
             "answer_type": analysis.answer_type,
@@ -104,26 +126,29 @@ class InterviewService:
             "next_question": next_question,
         }
 
-    def skip(self, session_id: str) -> dict:
-        session = self.get(session_id)
-        if session.current is not None:
-            session.skipped.add(session.current.item_id)
-        next_question = self._advance_dict(session)
-        self._save(session)
+    async def skip(self, session_id: str) -> dict:
+        session = await self.get(session_id)
+        turn = None
+        if (q := session.current) is not None:
+            session.skipped.add(q.item_id)
+            turn = {"action": "skip", "item_id": q.item_id, "question": q.text,
+                    "is_follow_up": q.is_follow_up}
+        next_question = await self._advance_dict(session)
+        await self._save(session, turn)
         return {"next_question": next_question}
 
-    def _advance_dict(self, session):
-        q = self._advance(session)
+    async def _advance_dict(self, session):
+        q = await self._advance(session)
         return q.to_dict() if q else None
 
-    def _advance(self, session: Session) -> Question | None:
+    async def _advance(self, session: Session) -> Question | None:
         if session.follow_ups:
             session.current = session.follow_ups.pop(0)
             return session.current
-        for gap in open_gaps(self.graph, session.leaver):
+        for gap in await open_gaps(self.graph, session.leaver):
             if gap.item_id in session.skipped:
                 continue
-            text = self.assistant.write_question(gap, self.graph.related(gap.item_id))
+            text = await self.assistant.write_question(gap, await self.graph.related(gap.item_id))
             session.current = Question(gap.item_id, gap.name, text, gap.reasons, gap.risk)
             return session.current
         session.current = None
