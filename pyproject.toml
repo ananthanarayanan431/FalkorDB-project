@@ -1,7 +1,7 @@
 [project]
-name = "experiment"
-version = "0.1.0"
-description = "Add your description here"
+name = "knowledge-transfer"
+version = "1.0.0"
+description = "Exit-interview knowledge transfer: find what a leaver alone knows, capture it, and build handover plans"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

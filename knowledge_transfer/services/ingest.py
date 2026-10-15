@@ -7,6 +7,7 @@ Either can run first, or both; items are merged by id.
 from knowledge_transfer.core.errors import InvalidInput
 from knowledge_transfer.graph import KnowledgeGraph
 from knowledge_transfer.schemas import Extraction, SourceBundle, slug
+from knowledge_transfer.services.assistant import Assistant
 
 
 async def unknown_references(graph: KnowledgeGraph, bundle: SourceBundle) -> list[dict]:
@@ -25,17 +26,17 @@ async def unknown_references(graph: KnowledgeGraph, bundle: SourceBundle) -> lis
     for n, k in enumerate(bundle.knows):
         refs += [(f"knows[{n}].person", "person", k.person), (f"knows[{n}].item", "item", k.item)]
 
-    exists: dict[tuple[str, str], bool] = {}
-    missing = []
-    for field, kind, id in refs:
-        if id in (people if kind == "person" else items):
-            continue
-        if (kind, id) not in exists:
-            lookup = graph.person if kind == "person" else graph.item
-            exists[kind, id] = await lookup(id) is not None
-        if not exists[kind, id]:
-            missing.append({"field": field, "message": f"unknown {kind} {id!r}"})
-    return missing
+    # One lookup per kind for everything the bundle does not define itself.
+    in_graph = {
+        "person": await graph.existing_people({id for _, kind, id in refs if kind == "person"} - people),
+        "item": await graph.existing_items({id for _, kind, id in refs if kind == "item"} - items),
+    }
+    known = {"person": people, "item": items}
+    return [
+        {"field": field, "message": f"unknown {kind} {id!r}"}
+        for field, kind, id in refs
+        if id not in known[kind] and id not in in_graph[kind]
+    ]
 
 
 async def ingest_sources(graph: KnowledgeGraph, bundle: SourceBundle) -> dict:
@@ -87,7 +88,7 @@ async def apply_extraction(graph: KnowledgeGraph, person: str, extraction: Extra
     return created
 
 
-async def ingest_braindump(graph: KnowledgeGraph, assistant, person: str, text: str) -> dict:
+async def ingest_braindump(graph: KnowledgeGraph, assistant: Assistant, person: str, text: str) -> dict:
     extraction = await assistant.extract_braindump(text)
     created = await apply_extraction(graph, person, extraction, "braindump")
     return {"items_found": len(extraction.items), "new_items": created}

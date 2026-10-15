@@ -18,6 +18,7 @@ confidence, created_at. All access is async (falkordb.asyncio).
 import contextlib
 import time
 import uuid
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
 from falkordb.asyncio import FalkorDB
@@ -42,12 +43,12 @@ def _require_rel(rel: str, allowed: set[str]) -> None:
         raise ValueError(f"Unsupported relationship type {rel!r}")
 
 
-def _node(row) -> dict:
+def _node(row: list) -> dict:
     """(ID(n), labels(n), properties(n)) as an explorer node."""
     return {"id": row[0], "labels": list(row[1]), "properties": dict(row[2])}
 
 
-def _edge(row) -> dict:
+def _edge(row: list) -> dict:
     """(ID(r), ID(start), ID(end), type(r), properties(r)) as an explorer edge."""
     return {"id": row[0], "source": row[1], "target": row[2], "type": row[3], "properties": dict(row[4])}
 
@@ -66,13 +67,13 @@ class ItemState:
 
 
 class KnowledgeGraph:
-    def __init__(self, db=None, graph_name: str | None = None):
+    def __init__(self, db: FalkorDB | None = None, graph_name: str | None = None):
         settings = get_settings()
         self.db = db or FalkorDB(host=settings.falkordb_host, port=settings.falkordb_port)
         self.graph = self.db.select_graph(graph_name or settings.falkordb_graph)
 
     @classmethod
-    async def connect(cls, db=None, graph_name: str | None = None) -> KnowledgeGraph:
+    async def connect(cls, db: FalkorDB | None = None, graph_name: str | None = None) -> KnowledgeGraph:
         graph = cls(db, graph_name)
         await graph.ensure_indexes()
         return graph
@@ -90,15 +91,16 @@ class KnowledgeGraph:
 
     # ---- writes -----------------------------------------------------------
 
-    async def upsert_person(self, id, name, role="", seniority="mid", status="active"):
+    async def upsert_person(self, id: str, name: str, role: str = "", seniority: str = "mid",
+                            status: str = "active") -> None:
         await self.graph.query(
             "MERGE (p:Person {id: $id}) "
             "SET p.name = $name, p.role = $role, p.seniority = $seniority, p.status = $status",
             {"id": id, "name": name, "role": role, "seniority": seniority, "status": status},
         )
 
-    async def upsert_item(self, id, name, kind="topic", description="",
-                    source="doc", source_ref="", confidence=1.0):
+    async def upsert_item(self, id: str, name: str, kind: str = "topic", description: str = "",
+                          source: str = "doc", source_ref: str = "", confidence: float = 1.0) -> None:
         label = LABELS[kind]
         await self.graph.query(
             "MERGE (i:Item {id: $id}) "
@@ -111,7 +113,7 @@ class KnowledgeGraph:
              "source": source, "ref": source_ref, "conf": confidence, "now": _now()},
         )
 
-    async def upsert_document(self, id, title, covers=(), source="doc"):
+    async def upsert_document(self, id: str, title: str, covers: Iterable[str] = (), source: str = "doc") -> None:
         await self.graph.query(
             "MERGE (d:Document {id: $id}) SET d.title = $title, d.source = $source",
             {"id": id, "title": title, "source": source},
@@ -124,7 +126,8 @@ class KnowledgeGraph:
                 {"item": item, "doc": id, "source": source, "now": _now()},
             )
 
-    async def link_touch(self, person, item, rel="WORKED_ON", source="ticket", ref="", confidence=1.0):
+    async def link_touch(self, person: str, item: str, rel: str = "WORKED_ON", source: str = "ticket",
+                         ref: str = "", confidence: float = 1.0) -> None:
         _require_rel(rel, TOUCH_RELS)
         await self.graph.query(
             f"MATCH (p:Person {{id: $p}}), (i:Item {{id: $i}}) MERGE (p)-[r:{rel}]->(i) "
@@ -134,7 +137,8 @@ class KnowledgeGraph:
              "conf": confidence, "now": _now()},
         )
 
-    async def link_items(self, src, rel, dst, source="doc", ref="", confidence=1.0):
+    async def link_items(self, src: str, rel: str, dst: str, source: str = "doc", ref: str = "",
+                         confidence: float = 1.0) -> None:
         _require_rel(rel, LINK_RELS)
         await self.graph.query(
             f"MATCH (a:Item {{id: $a}}), (b:Item {{id: $b}}) MERGE (a)-[r:{rel}]->(b) "
@@ -144,15 +148,29 @@ class KnowledgeGraph:
              "conf": confidence, "now": _now()},
         )
 
-    async def set_knows(self, person, item, level=2):
+    async def set_knows(self, person: str, item: str, level: int = 2) -> None:
         await self.graph.query(
             "MATCH (p:Person {id: $p}), (i:Item {id: $i}) MERGE (p)-[r:KNOWS]->(i) "
             "SET r.level = $level, r.source = 'profile', r.updated_at = $now",
             {"p": person, "i": item, "level": level, "now": _now()},
         )
 
-    async def add_answer(self, item, person, question, text, kind="other",
-                   source="interview", confidence=0.8, interrupted=False) -> str:
+    async def set_knows_many(self, person: str, levels: list[tuple[str, int]]) -> None:
+        """`set_knows` for many (item, level) pairs in one query; a later pair for the
+        same item wins, as with repeated calls."""
+        if not levels:
+            return
+        await self.graph.query(
+            "UNWIND $rows AS row "
+            "MATCH (p:Person {id: $p}), (i:Item {id: row.item}) MERGE (p)-[r:KNOWS]->(i) "
+            "SET r.level = row.level, r.source = 'profile', r.updated_at = $now",
+            # One row per item: FalkorDB does not apply repeated rows for the same
+            # relationship in order within a single query.
+            {"p": person, "rows": [{"item": i, "level": lvl} for i, lvl in dict(levels).items()], "now": _now()},
+        )
+
+    async def add_answer(self, item: str, person: str, question: str, text: str, kind: str = "other",
+                         source: str = "interview", confidence: float = 0.8, interrupted: bool = False) -> str:
         id = uuid.uuid4().hex
         await self.graph.query(
             "MATCH (i:Item {id: $item}), (p:Person {id: $person}) "
@@ -167,7 +185,7 @@ class KnowledgeGraph:
         )
         return id
 
-    async def reset(self):
+    async def reset(self) -> None:
         await self.graph.query("MATCH (n) DETACH DELETE n")
 
     # ---- reads ------------------------------------------------------------
@@ -179,7 +197,7 @@ class KnowledgeGraph:
         except Exception:
             return False
 
-    async def person(self, id):
+    async def person(self, id: str) -> dict | None:
         rows = await self._rows(
             "MATCH (p:Person {id: $id}) RETURN p.id, p.name, p.role, p.seniority, p.status",
             {"id": id},
@@ -194,13 +212,13 @@ class KnowledgeGraph:
         )
         return [dict(zip(("id", "name", "role", "seniority", "status"), r, strict=True)) for r in rows]
 
-    async def leaving_person(self):
+    async def leaving_person(self) -> str | None:
         rows = await self._rows(
             "MATCH (p:Person {status: 'leaving'}) RETURN p.id ORDER BY p.id LIMIT 1"
         )
         return rows[0][0] if rows else None
 
-    async def item(self, id):
+    async def item(self, id: str) -> dict | None:
         rows = await self._rows(
             "MATCH (i:Item {id: $id}) RETURN i.id, i.name, i.kind, i.description",
             {"id": id},
@@ -209,7 +227,21 @@ class KnowledgeGraph:
             return None
         return dict(zip(("id", "name", "kind", "description"), rows[0], strict=True))
 
-    async def leaver_items(self, leaver) -> list[ItemState]:
+    async def existing_people(self, ids: Collection[str]) -> set[str]:
+        """The ids in `ids` that belong to a Person, in one query."""
+        if not ids:
+            return set()
+        rows = await self._rows("MATCH (p:Person) WHERE p.id IN $ids RETURN p.id", {"ids": list(ids)})
+        return {r[0] for r in rows}
+
+    async def existing_items(self, ids: Collection[str]) -> set[str]:
+        """The ids in `ids` that belong to an Item, in one query."""
+        if not ids:
+            return set()
+        rows = await self._rows("MATCH (i:Item) WHERE i.id IN $ids RETURN i.id", {"ids": list(ids)})
+        return {r[0] for r in rows}
+
+    async def leaver_items(self, leaver: str) -> list[ItemState]:
         """Everything the leaver touched, with who else touched it, whether it is
         documented, how many interview answers explain it, and what depends on it."""
         rows = await self._rows(
@@ -228,7 +260,7 @@ class KnowledgeGraph:
         )
         return [ItemState(*r) for r in rows]
 
-    async def related(self, item_id):
+    async def related(self, item_id: str) -> dict[str, list[str]]:
         """Neighbouring items and documents, used as context for questions."""
         rows = await self._rows(
             "MATCH (i:Item {id: $id}) "
@@ -242,7 +274,7 @@ class KnowledgeGraph:
         r = rows[0]
         return {"depends_on": r[0], "used_by": r[1], "documents": r[2]}
 
-    async def knows(self, person) -> dict[str, int]:
+    async def knows(self, person: str) -> dict[str, int]:
         rows = await self._rows(
             "MATCH (:Person {id: $p})-[k:KNOWS]->(i:Item) RETURN i.id, k.level", {"p": person}
         )
@@ -363,7 +395,7 @@ class KnowledgeGraph:
             nodes.setdefault(r[5], _node(r[5:8]))
         return {"nodes": list(nodes.values()), "edges": edges, "truncated": truncated}
 
-    async def export(self):
+    async def export(self) -> dict:
         """Nodes and edges for a graph visualisation."""
         nodes = await self._rows(
             "MATCH (n) RETURN n.id, labels(n), coalesce(n.name, n.title, n.kind), n.status"

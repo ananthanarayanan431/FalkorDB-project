@@ -13,5 +13,8 @@ def default_llm() -> ChatOpenAI | None:
             api_key=key,
             base_url="https://openrouter.ai/api/v1",
             temperature=0,
+            # The client has no timeout by default: a hung provider would hold the request open.
+            timeout=settings.llm_timeout_s,
+            max_retries=2,
         )
     return None

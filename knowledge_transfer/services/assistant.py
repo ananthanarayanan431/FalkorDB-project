@@ -7,6 +7,7 @@ extraction needs an LLM and raises LLMUnavailable otherwise.
 """
 import logging
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
@@ -42,14 +43,14 @@ SUMMARY_PROMPT = """Write a 2-3 sentence welcome summary of this handover plan f
 
 
 class Assistant:
-    def __init__(self, llm=None):
+    def __init__(self, llm: BaseChatModel | None = None):
         self.llm = llm
 
     @property
     def has_llm(self) -> bool:
         return self.llm is not None
 
-    async def _structured(self, schema: type[BaseModel], system: str, human: str):
+    async def _structured[M: BaseModel](self, schema: type[M], system: str, human: str) -> M:
         if not self.llm:
             raise LLMUnavailable("No LLM configured (set OPENROUTER_API_KEY)")
         try:

@@ -1,4 +1,8 @@
+import asyncio
+
 from helpers import V1, assert_error
+
+from knowledge_transfer.api.v1.routes import health
 
 
 async def test_health_uses_success_envelope(client):
@@ -15,6 +19,17 @@ async def test_health_reports_store_down(client, services, monkeypatch):
         return False
 
     monkeypatch.setattr(services.graph, "ping", down)
+    body = assert_error(await client.get(f"{V1}/health"), 503, "SERVICE_UNAVAILABLE")
+    assert body["error"]["details"] == {"graph": "down", "database": "up"}
+
+
+async def test_health_reports_hung_store_down(client, services, monkeypatch):
+    async def hang():
+        await asyncio.sleep(10)
+        return True
+
+    monkeypatch.setattr(health, "PING_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(services.graph, "ping", hang)
     body = assert_error(await client.get(f"{V1}/health"), 503, "SERVICE_UNAVAILABLE")
     assert body["error"]["details"] == {"graph": "down", "database": "up"}
 
@@ -75,6 +90,19 @@ async def test_knows_rejects_unknown_item_without_partial_write(seeded_client, s
     body = assert_error(resp, 404, "NOT_FOUND")
     assert body["error"]["details"] == {"missing_items": ["nope"]}
     assert "billing-service" not in await services.graph.knows("sam")
+
+
+async def test_knows_writes_all_levels_and_last_one_wins(seeded_client, services):
+    resp = await seeded_client.put(f"{V1}/people/sam/knows", json=[
+        {"item": "billing-service", "level": 1},
+        {"item": "billing-retry-scheduler", "level": 2},
+        {"item": "billing-service", "level": 3},
+    ])
+    assert resp.status_code == 200
+    assert resp.json()["data"] == {"updated": 3}
+    knows = await services.graph.knows("sam")
+    assert knows["billing-service"] == 3
+    assert knows["billing-retry-scheduler"] == 2
 
 
 async def test_knows_unknown_person(client):

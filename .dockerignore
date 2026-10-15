@@ -1,0 +1,17 @@
+# Only pyproject.toml, uv.lock, alembic.ini, migrations/ and knowledge_transfer/ are copied
+# into the API image; everything else stays out of the build context.
+.git
+.github
+.claude
+.venv
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+frontend
+sample
+tests
+*.md

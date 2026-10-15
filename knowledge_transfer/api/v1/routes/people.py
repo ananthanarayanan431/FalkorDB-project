@@ -32,8 +32,8 @@ async def put_knows(
 ) -> ApiResponse[dict]:
     await require_person(services, person)
     # Validate every item before writing so a bad entry leaves nothing half-applied.
-    if missing := [k.item for k in knows if await services.graph.item(k.item) is None]:
+    found = await services.graph.existing_items({k.item for k in knows})
+    if missing := [k.item for k in knows if k.item not in found]:
         raise NotFound(f"Unknown item {missing[0]!r}", {"missing_items": missing})
-    for k in knows:
-        await services.graph.set_knows(person, k.item, k.level)
+    await services.graph.set_knows_many(person, [(k.item, k.level) for k in knows])
     return ok({"updated": len(knows)}, "Knowledge levels updated")

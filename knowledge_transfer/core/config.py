@@ -47,6 +47,7 @@ class Settings:
     # LLM and voice providers (OpenRouter)
     openrouter_api_key: str | None
     llm_model: str
+    llm_timeout_s: float  # per LLM request; the client retries a failed request twice
     stt_model: str
     tts_model: str
     tts_voice: str
@@ -80,6 +81,7 @@ class Settings:
             ),
             openrouter_api_key=env("OPENROUTER_API_KEY") or None,
             llm_model=env("LLM_MODEL", "openai/gpt-4o-mini"),
+            llm_timeout_s=float(env("LLM_TIMEOUT_S", "60")),
             stt_model=env("STT_MODEL", "deepgram/nova-3"),
             tts_model=env("TTS_MODEL", "deepgram/aura-2"),
             tts_voice=env("TTS_VOICE", "aura-2-thalia-en"),

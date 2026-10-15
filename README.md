@@ -12,6 +12,7 @@ gets (leaver's knowledge minus theirs) and in what order (`PREREQUISITE_OF` edge
 Flow: ingest sources and/or a leaver brain dump -> `GET gaps` / `coverage` -> `POST interviews`
 and `.../answer` -> `GET handover/{receiver}`. `OPENROUTER_API_KEY` is optional:
 without it questions come from templates, and brain-dump extraction and voice are disabled.
+Each LLM request times out after `LLM_TIMEOUT_S` seconds (default 60).
 Tests run against an embedded FalkorDB: `make test`.
 
 Every response is `{"success": true, "message", "data"}` or
@@ -65,6 +66,32 @@ Interruptions:
 
 Spoken answers are stored in the graph with source `interview-voice`. Optional settings:
 `STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`, `VOICE_GRACE_S`.
+
+### Configuration
+
+Every setting is an environment variable, listed with its default in [`.env.example`](.env.example)
+(source: `knowledge_transfer/core/config.py`). Copy it to `.env` for local overrides.
+
+### Production
+
+Read [SECURITY.md](SECURITY.md) first: the API has no authentication and must sit behind a
+network boundary or an authenticating proxy, with TLS.
+
+- `APP_ENV=production` turns off `/docs` and the voice demo page and expects `ALLOWED_HOSTS`
+  and `ALLOWED_ORIGINS` to be set (the API logs a warning at startup if they are not).
+- Images: `Dockerfile` (API, runs as a non-root user, `uvicorn --proxy-headers --no-server-header`)
+  and `frontend/Dockerfile` (Next.js standalone server). Run `alembic upgrade head` with the API
+  image before starting a new version.
+- `make app` builds both images and runs the whole stack locally on http://localhost:3001.
+
+### Development checks
+
+    make lint        # ruff: style, imports, bugbear and bandit security rules
+    make test        # pytest
+    make web-check   # UI typecheck, lint and production build
+    make check       # all of the above, as CI runs them
+
+CI also audits runtime dependencies (`pip-audit`, `npm audit`) and builds both Docker images.
 
 ### Layout
 

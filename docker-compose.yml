@@ -1,6 +1,12 @@
+# Development stores:      docker compose up -d --wait          (FalkorDB + Postgres)
+# Whole app from images:    docker compose --profile app up -d --build
+#                           then open http://localhost:3001
+# Ports are bound to 127.0.0.1 only. The app profile is for trying a production build
+# locally; a real deployment puts a TLS reverse proxy in front and sets real passwords.
+
 services:
   falkordb:
-    image: falkordb/falkordb:latest
+    image: falkordb/falkordb:6.0.1
     container_name: falkordb
     ports:
       - "127.0.0.1:6379:6379"   # database (Redis protocol)
@@ -29,6 +35,48 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+
+  # ---- profile "app": the API and UI built from this repository ----------------
+
+  migrate:
+    profiles: [app]
+    build: .
+    image: kt-api
+    command: ["alembic", "upgrade", "head"]
+    environment: &api-env
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-kt}:${POSTGRES_PASSWORD:-kt}@postgres:5432/${POSTGRES_DB:-knowledge_transfer}
+      FALKORDB_HOST: falkordb
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ALLOWED_ORIGINS: http://localhost:3001
+      ALLOWED_HOSTS: localhost,127.0.0.1,api
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    profiles: [app]
+    image: kt-api
+    environment: *api-env
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      falkordb:
+        condition: service_healthy
+
+  ui:
+    profiles: [app]
+    build:
+      context: frontend
+      args:
+        API_URL: http://api:8000
+        NEXT_PUBLIC_VOICE_WS_URL: ws://localhost:8000
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   falkordb_data:

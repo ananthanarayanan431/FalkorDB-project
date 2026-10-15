@@ -70,3 +70,69 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -v
+
+  lint:
+    name: Lint and dependency audit (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Ruff (style, imports, bugbear, bandit security rules)
+        run: uv run ruff check --output-format github .
+
+      - name: Known vulnerabilities in runtime dependencies
+        run: |
+          uv export --locked --no-dev --no-hashes --format requirements-txt > requirements.txt
+          uvx pip-audit --no-deps --disable-pip -r requirements.txt
+
+  web:
+    name: Web UI (typecheck, lint, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Known vulnerabilities in runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: API image
+        run: docker build -t kt-api .
+
+      - name: UI image
+        run: docker build -t kt-ui frontend
