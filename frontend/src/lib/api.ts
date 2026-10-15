@@ -120,7 +120,3 @@ export const api = {
 
   reset: () => request<null>("POST", "/reset"),
 };
-
-export function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
