@@ -352,8 +352,6 @@ export function GraphCanvas({ nodes, edges, hiddenLabels, hiddenTypes, matches, 
 
   useEffect(() => {
     if (ready && fitNonce > 0) graphRef.current?.zoomToFit(0, 48, (n) => nodeVisible(n));
-    // nodeVisible only reads refs
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, fitNonce]);
 
   return <div ref={containerRef} className={className} />;

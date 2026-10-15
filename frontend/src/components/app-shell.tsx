@@ -15,7 +15,7 @@ const NAV = [
   { href: "/interview", label: "Interview" },
   { href: "/handover", label: "Handover plans" },
   { href: "/people", label: "People" },
-  { href: "/graph", label: "Graph data" },
+  { href: "/graph", label: "Graph" },
   { href: "/settings", label: "Settings" },
 ];
 
