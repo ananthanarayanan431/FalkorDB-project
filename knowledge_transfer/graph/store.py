@@ -33,6 +33,16 @@ def _now() -> int:
     return int(time.time() * 1000)
 
 
+def _node(row) -> dict:
+    """(ID(n), labels(n), properties(n)) as an explorer node."""
+    return {"id": row[0], "labels": list(row[1]), "properties": dict(row[2])}
+
+
+def _edge(row) -> dict:
+    """(ID(r), ID(start), ID(end), type(r), properties(r)) as an explorer edge."""
+    return {"id": row[0], "source": row[1], "target": row[2], "type": row[3], "properties": dict(row[4])}
+
+
 @dataclass
 class ItemState:
     """One thing the leaver touched, with the facts the gap analysis needs."""
@@ -278,6 +288,73 @@ class KnowledgeGraph:
                 {"text": text, "kind": kind, "source": source, "created_at": ts}
             )
         return out
+
+    # ---- graph explorer: the raw FalkorDB graph, every property included -----
+
+    async def schema(self) -> dict:
+        """Node and relationship totals, with a count per label and per relationship type."""
+        nodes = await self._rows("MATCH (n) RETURN count(n)")
+        edges = await self._rows("MATCH ()-[r]->() RETURN count(r)")
+        labels = await self._rows("MATCH (n) UNWIND labels(n) AS l RETURN l, count(*) ORDER BY l")
+        types = await self._rows("MATCH ()-[r]->() RETURN type(r), count(r) ORDER BY type(r)")
+        return {
+            "node_count": nodes[0][0],
+            "edge_count": edges[0][0],
+            "labels": [{"label": r[0], "count": r[1]} for r in labels],
+            "relationship_types": [{"type": r[0], "count": r[1]} for r in types],
+        }
+
+    async def snapshot(self, labels: list[str] | None = None, limit: int = 1000) -> dict:
+        """Up to `limit` nodes (optionally only those carrying one of `labels`) and every
+        relationship between them. Ids are FalkorDB's internal ids, valid for this read."""
+        params = {"labels": labels or [], "limit": limit + 1}
+        node_rows = await self._rows(
+            "MATCH (n) WHERE size($labels) = 0 OR any(l IN labels(n) WHERE l IN $labels) "
+            "RETURN ID(n), labels(n), properties(n) ORDER BY ID(n) LIMIT $limit",
+            params,
+        )
+        truncated = len(node_rows) > limit
+        nodes = [_node(r) for r in node_rows[:limit]]
+        ids = [n["id"] for n in nodes]
+        edge_rows = await self._rows(
+            "MATCH (a)-[r]->(b) WHERE ID(a) IN $ids AND ID(b) IN $ids "
+            "RETURN ID(r), ID(a), ID(b), type(r), properties(r) ORDER BY ID(r)",
+            {"ids": ids},
+        ) if ids else []
+        return {"nodes": nodes, "edges": [_edge(r) for r in edge_rows], "truncated": truncated}
+
+    async def neighbors(self, node_id: int, limit: int = 500) -> dict | None:
+        """A node, its relationships in both directions and the nodes at their other end.
+        None when there is no node with this internal id."""
+        center = await self._rows(
+            "MATCH (n) WHERE ID(n) = $id RETURN ID(n), labels(n), properties(n)", {"id": node_id}
+        )
+        if not center:
+            return None
+        params = {"id": node_id, "limit": limit + 1}
+        # Columns: the edge (id, start, end, type, properties), then the node at its other end.
+        # FalkorDB needs distinct column names, hence the aliases on the repeated ID(m).
+        outgoing = await self._rows(
+            "MATCH (n)-[r]->(m) WHERE ID(n) = $id "
+            "RETURN ID(r), ID(n) AS start, ID(m) AS end, type(r), properties(r), "
+            "ID(m) AS other, labels(m), properties(m) ORDER BY ID(r) LIMIT $limit",
+            params,
+        )
+        incoming = await self._rows(
+            "MATCH (m)-[r]->(n) WHERE ID(n) = $id "
+            "RETURN ID(r), ID(m) AS start, ID(n) AS end, type(r), properties(r), "
+            "ID(m) AS other, labels(m), properties(m) ORDER BY ID(r) LIMIT $limit",
+            params,
+        )
+        # A self-loop matches both directions; keep each relationship once.
+        rows = list({r[0]: r for r in outgoing + incoming}.values())
+        truncated = len(rows) > limit
+        nodes = {node_id: _node(center[0])}
+        edges = []
+        for r in rows[:limit]:
+            edges.append(_edge(r[:5]))
+            nodes.setdefault(r[5], _node(r[5:8]))
+        return {"nodes": list(nodes.values()), "edges": edges, "truncated": truncated}
 
     async def export(self):
         """Nodes and edges for a graph visualisation."""

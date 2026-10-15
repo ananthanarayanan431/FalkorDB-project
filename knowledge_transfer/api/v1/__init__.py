@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from knowledge_transfer.api.responses import ERROR_RESPONSES
 from knowledge_transfer.api.v1.routes import (
     analysis,
+    graph,
     handover,
     health,
     ingest,
@@ -14,7 +15,7 @@ from knowledge_transfer.api.v1.routes import (
 )
 
 router = APIRouter(prefix="/api/v1", responses=ERROR_RESPONSES)
-for module in (health, ingest, people, analysis, interviews, handover, reset, voice):
+for module in (health, ingest, people, analysis, graph, interviews, handover, reset, voice):
     router.include_router(module.router)
 
 __all__ = ["router"]

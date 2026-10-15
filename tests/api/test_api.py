@@ -1,36 +1,4 @@
-import httpx
-import pytest
-
-from knowledge_transfer.api import Services, create_app
-
-V1 = "/api/v1"
-
-
-@pytest.fixture
-async def services(graph, assistant, db):
-    return Services(graph, assistant, db)
-
-
-@pytest.fixture
-async def client(services):
-    transport = httpx.ASGITransport(app=create_app(services))
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-
-
-@pytest.fixture
-async def seeded_client(client):
-    assert (await client.post(f"{V1}/ingest/seed")).status_code == 201
-    return client
-
-
-def assert_error(resp, status, code):
-    assert resp.status_code == status
-    body = resp.json()
-    assert body["success"] is False
-    assert body["error"]["code"] == code
-    assert body["message"]
-    return body
+from helpers import V1, assert_error
 
 
 async def test_health_uses_success_envelope(client):

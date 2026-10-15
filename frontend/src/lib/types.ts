@@ -61,6 +61,37 @@ export interface GraphExport {
   edges: GraphEdge[];
 }
 
+/** A property value as FalkorDB returns it. */
+export type PropertyValue = string | number | boolean | null | PropertyValue[] | { [key: string]: PropertyValue };
+
+/** A node exactly as stored in FalkorDB. `id` is the internal id, valid within one read. */
+export interface RawNode {
+  id: number;
+  labels: string[];
+  properties: Record<string, PropertyValue>;
+}
+
+export interface RawEdge {
+  id: number;
+  source: number;
+  target: number;
+  type: string;
+  properties: Record<string, PropertyValue>;
+}
+
+export interface GraphSnapshot {
+  nodes: RawNode[];
+  edges: RawEdge[];
+  truncated: boolean;
+}
+
+export interface GraphSchema {
+  node_count: number;
+  edge_count: number;
+  labels: { label: string; count: number }[];
+  relationship_types: { type: string; count: number }[];
+}
+
 export interface Question {
   item_id: string;
   item_name: string;

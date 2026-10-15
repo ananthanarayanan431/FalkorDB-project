@@ -19,8 +19,3 @@ async def get_gaps(services: ServicesDep, leaver: str | None = None,
 async def get_coverage(services: ServicesDep, leaver: str | None = None) -> ApiResponse[dict]:
     who = await resolve_leaver(services, leaver)
     return ok(await gaps.coverage(services.graph, who), "Coverage computed")
-
-
-@router.get("/graph")
-async def get_graph(services: ServicesDep) -> ApiResponse[dict]:
-    return ok(await services.graph.export(), "Graph exported")

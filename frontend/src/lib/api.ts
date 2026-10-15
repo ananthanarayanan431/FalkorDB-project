@@ -8,6 +8,8 @@ import type {
   Coverage,
   Gap,
   GraphExport,
+  GraphSchema,
+  GraphSnapshot,
   Health,
   IngestCounts,
   Interview,
@@ -46,12 +48,15 @@ export class ApiError extends Error {
   }
 }
 
-type Query = Record<string, string | number | boolean | null | undefined>;
+type Scalar = string | number | boolean | null | undefined;
+/** An array value is sent as a repeated parameter: `labels=A&labels=B`. */
+type Query = Record<string, Scalar | string[]>;
 
 function url(path: string, query?: Query): string {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query ?? {})) {
-    if (v !== null && v !== undefined && v !== "") params.set(k, String(v));
+    if (Array.isArray(v)) v.forEach((item) => params.append(k, item));
+    else if (v !== null && v !== undefined && v !== "") params.set(k, String(v));
   }
   const qs = params.toString();
   return `${BASE}${path}${qs ? `?${qs}` : ""}`;
@@ -103,6 +108,11 @@ export const api = {
     request<Gap[]>("GET", "/gaps", undefined, { leaver, only_open: onlyOpen }),
   coverage: (leaver: string | null) => request<Coverage>("GET", "/coverage", undefined, { leaver }),
   graph: () => request<GraphExport>("GET", "/graph"),
+  graphSchema: () => request<GraphSchema>("GET", "/graph/schema"),
+  graphSnapshot: (labels: string[], limit: number) =>
+    request<GraphSnapshot>("GET", "/graph/snapshot", undefined, { labels, limit }),
+  graphNeighbors: (nodeId: number, limit = 500) =>
+    request<GraphSnapshot>("GET", `/graph/nodes/${nodeId}/neighbors`, undefined, { limit }),
 
   startInterview: (leaver: string | null) => request<InterviewStarted>("POST", "/interviews", { leaver }),
   interview: (id: string) => request<Interview>("GET", `/interviews/${encodeURIComponent(id)}`),

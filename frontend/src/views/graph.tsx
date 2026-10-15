@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { Badge, Button, Card, cx, EmptyState, ErrorAlert, inputClass, Loading, PageHeader, Stat } from "@/components/ui";
+import { Badge, Button, Card, cx, EmptyState, ErrorAlert, inputClass, Loading, Stat } from "@/components/ui";
 import { api } from "@/lib/api";
 import { plural } from "@/lib/format";
 import type { GraphExport, GraphNode } from "@/lib/types";
@@ -144,15 +144,14 @@ function Explorer({ data }: { data: GraphExport }) {
   );
 }
 
-export function GraphView() {
+/** The graph as lists: an accessible alternative to the canvas. */
+export function GraphTable() {
   const { data, error, loading, reload } = useAsync(api.graph, []);
   return (
-    <>
-      <PageHeader
-        title="Graph data"
-        description="Everything stored in the knowledge graph: people, knowledge items, documents, interview answers and how they connect."
-        actions={<Button onClick={reload} disabled={loading}>Refresh</Button>}
-      />
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button onClick={reload} disabled={loading}>Refresh</Button>
+      </div>
       {error ? (
         <ErrorAlert error={error} onRetry={reload} />
       ) : !data ? (
@@ -162,6 +161,6 @@ export function GraphView() {
       ) : (
         <Explorer data={data} />
       )}
-    </>
+    </div>
   );
 }
