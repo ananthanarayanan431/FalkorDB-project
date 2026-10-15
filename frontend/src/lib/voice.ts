@@ -25,24 +25,9 @@ export interface VoiceCallbacks {
 
 const SAMPLE_RATE = 16000;
 
-// Runs on the audio thread: float samples in, PCM16 frames out.
-const CAPTURE_WORKLET = `
-class Capture extends AudioWorkletProcessor {
-  process(inputs) {
-    const ch = inputs[0][0];
-    if (ch) {
-      const out = new Int16Array(ch.length);
-      for (let i = 0; i < ch.length; i++) {
-        const s = Math.max(-1, Math.min(1, ch[i]));
-        out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-      }
-      this.port.postMessage(out.buffer, [out.buffer]);
-    }
-    return true;
-  }
-}
-registerProcessor("capture", Capture);
-`;
+// Runs on the audio thread: float samples in, PCM16 frames out. A static file (public/),
+// not a blob: URL, so the Content-Security-Policy does not have to allow blob: scripts.
+const CAPTURE_WORKLET_URL = "/capture-worklet.js";
 
 export function voiceSocketUrl(interviewId: string): string {
   const configured = process.env.NEXT_PUBLIC_VOICE_WS_URL;
@@ -84,12 +69,7 @@ export class VoiceClient {
       });
       // stop() may have run while the permission prompt was open; release what was acquired.
       if (this.stopped) return this.teardown();
-      const url = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: "text/javascript" }));
-      try {
-        await ctx.audioWorklet.addModule(url);
-      } finally {
-        URL.revokeObjectURL(url);
-      }
+      await ctx.audioWorklet.addModule(CAPTURE_WORKLET_URL);
       if (this.stopped) return this.teardown();
       this.connect();
     } catch (e) {
