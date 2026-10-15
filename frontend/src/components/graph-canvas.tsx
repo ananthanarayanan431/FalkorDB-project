@@ -110,7 +110,7 @@ export function GraphCanvas({ nodes, edges, hiddenLabels, hiddenTypes, matches, 
   const graphRef = useRef<Graph | null>(null);
   const [ready, setReady] = useState(false);
   const nodesById = useRef(new Map<number, VNode>());
-  const fitOnStop = useRef(false);
+  const fit = useRef<"none" | "first-tick" | "on-stop">("none");
   // Everything the draw callbacks read. Kept in a ref so the canvas never re-mounts.
   const view = useRef({
     hiddenLabels,
@@ -176,11 +176,18 @@ export function GraphCanvas({ nodes, edges, hiddenLabels, hiddenTypes, matches, 
         .linkCanvasObjectMode(() => "after")
         .linkCanvasObject((link, ctx, scale) => drawLinkLabel(link, ctx, scale))
         .linkHoverPrecision(6)
-        .warmupTicks(60)
-        .cooldownTicks(150)
+        .warmupTicks(100)
+        .cooldownTicks(100)
+        // After new data: fit once the pre-computed layout is first drawn, and again when it settles.
+        .onEngineTick(() => {
+          if (fit.current === "first-tick") {
+            fit.current = "on-stop";
+            graph?.zoomToFit(0, 48, (n) => nodeVisible(n));
+          }
+        })
         .onEngineStop(() => {
-          if (fitOnStop.current) {
-            fitOnStop.current = false;
+          if (fit.current !== "none") {
+            fit.current = "none";
             graph?.zoomToFit(0, 48, (n) => nodeVisible(n));
           }
         })
@@ -315,8 +322,8 @@ export function GraphCanvas({ nodes, edges, hiddenLabels, hiddenTypes, matches, 
       next.set(raw.id, v);
       return v;
     });
-    const added = vnodes.some((v) => !prev.has(v.id));
-    fitOnStop.current = prev.size === 0 || (added && vnodes.length - prev.size > prev.size);
+    // Fit on a fresh load or when the graph more than doubles; a few expanded neighbours keep the view.
+    if (prev.size === 0 || vnodes.length > 2 * prev.size) fit.current = "first-tick";
     nodesById.current = next;
     graph.graphData({ nodes: vnodes, links: withCurvature(edges.filter((e) => next.has(e.source) && next.has(e.target))) });
   }, [ready, nodes, edges]);
