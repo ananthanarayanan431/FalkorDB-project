@@ -18,7 +18,12 @@ const nextConfig: NextConfig = {
     },
   },
   async rewrites() {
-    return [{ source: "/api/v1/:path*", destination: `${API_URL}/api/v1/:path*` }];
+    return [
+      { source: "/api/v1/:path*", destination: `${API_URL}/api/v1/:path*` },
+      // FastAPI's interactive API reference and the schema it loads.
+      { source: "/docs", destination: `${API_URL}/docs` },
+      { source: "/openapi.json", destination: `${API_URL}/openapi.json` },
+    ];
   },
 };
 
