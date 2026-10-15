@@ -45,6 +45,8 @@ interface Props {
 }
 
 const RADIUS = 6;
+/** Up to this many nodes, every caption is drawn at any zoom level. */
+const SMALL_GRAPH = 50;
 
 interface Colors {
   fg: string;
@@ -270,8 +272,10 @@ export function GraphCanvas({ nodes, edges, hiddenLabels, hiddenTypes, matches, 
       ctx.stroke();
     }
 
-    // Captions appear once zoomed in, and always for the hovered, selected or found nodes.
-    if (scale >= 1.3 || selected || hovered === n.id || found.has(n.id) || (sel?.kind === "node" && near.has(n.id))) {
+    // Captions: always on small graphs; on large ones once zoomed in, plus the hovered,
+    // selected and found nodes.
+    const small = nodesById.current.size <= SMALL_GRAPH;
+    if (small || scale >= 1.3 || selected || hovered === n.id || found.has(n.id) || (sel?.kind === "node" && near.has(n.id))) {
       const size = Math.max(10 / scale, 2.5);
       ctx.font = `${size}px ui-sans-serif, system-ui, sans-serif`;
       ctx.textAlign = "center";
