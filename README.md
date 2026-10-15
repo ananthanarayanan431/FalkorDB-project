@@ -19,6 +19,17 @@ Every response is `{"success": true, "message", "data"}` or
 `POST /api/v1/reset` wipes the graph and stored results. The API has no authentication, so reset
 returns 404 unless `ENABLE_RESET=true` is set.
 
+### Graph explorer (read-only)
+
+- `GET /api/v1/graph/schema`: node and relationship totals, with a count per label and type.
+- `GET /api/v1/graph/snapshot?limit=1000&labels=Person&labels=Item`: nodes with all labels and
+  properties, and every relationship between them; `truncated` is true when more nodes matched.
+- `GET /api/v1/graph/nodes/{id}/neighbors`: a node, its relationships in both directions and the
+  nodes at their other end.
+
+Ids are FalkorDB internal ids, valid within one read. The web UI (`frontend/`, page `/graph`)
+draws this graph.
+
 ### Storage
 
 - **FalkorDB**: the knowledge graph (people, items, documents, interview answers).

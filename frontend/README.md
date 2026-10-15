@@ -29,7 +29,7 @@ interview WebSocket connects to the API directly: `ws(s)://<host>:8000` unless
 | `/interview` | Typed or spoken interview, with the full transcript                  |
 | `/handover`  | Preview, save and reopen a plan per receiver                         |
 | `/people`    | Add or edit people, set what each person already knows               |
-| `/graph`     | Browse every node and relationship in the graph                      |
+| `/graph`     | The FalkorDB graph drawn as nodes and relationships, with every property; filter by label or type, search, load a node's neighbours. A Table tab lists the same data as text |
 | `/settings`  | Clear browser preferences, delete all data (needs `ENABLE_RESET=true` on the API) |
 | `/privacy`, `/terms` | Privacy policy and terms                                     |
 
