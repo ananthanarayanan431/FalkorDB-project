@@ -84,6 +84,21 @@ async def test_create_person_returns_201(client):
     assert resp.json()["data"]["id"] == "ana"
 
 
+async def test_list_people_sorted_by_name(seeded_client):
+    resp = await seeded_client.get(f"{V1}/people")
+    assert resp.status_code == 200
+    people = resp.json()["data"]
+    assert [p["name"] for p in people] == ["Meera Iyer", "Priya Nair", "Ravi Menon", "Sam Carter"]
+    assert people[2] == {"id": "ravi", "name": "Ravi Menon", "role": "Senior Backend Engineer",
+                         "seniority": "senior", "status": "leaving"}
+
+
+async def test_list_people_empty(client):
+    resp = await client.get(f"{V1}/people")
+    assert resp.status_code == 200
+    assert resp.json()["data"] == []
+
+
 async def test_knows_rejects_unknown_item_without_partial_write(seeded_client, services):
     resp = await seeded_client.put(f"{V1}/people/sam/knows", json=[
         {"item": "billing-service", "level": 3},

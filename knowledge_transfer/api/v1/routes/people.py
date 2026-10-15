@@ -8,6 +8,12 @@ from knowledge_transfer.schemas import KnowsLevelIn, PersonIn
 router = APIRouter(prefix="/people", tags=["people"])
 
 
+@router.get("")
+async def list_people(services: ServicesDep) -> ApiResponse[list[dict]]:
+    people = await services.graph.people()
+    return ok(people, f"{len(people)} person(s) found")
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def post_person(person: PersonIn, services: ServicesDep) -> ApiResponse[PersonIn]:
     await services.graph.upsert_person(person.id, person.name, person.role, person.seniority, person.status)

@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/* Colour tokens. Neutral surfaces with one muted green accent; no gradients. */
+:root {
+  --bg: #f7f7f4;
+  --surface: #ffffff;
+  --surface-2: #f0efea;
+  --fg: #1d1d1b;
+  --muted: #64645e;
+  --line: #deddd5;
+  --accent: #2f5d50;
+  --accent-fg: #ffffff;
+  --accent-soft: #e3ece8;
+  --danger: #a4452c;
+  --danger-soft: #f6e6e1;
+  --warn: #8a6212;
+  --warn-soft: #f5ecd7;
+  --ok: #2f6b3a;
+  --ok-soft: #e2efe3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141513;
+    --surface: #1c1d1b;
+    --surface-2: #242522;
+    --fg: #ecebe6;
+    --muted: #9a9a93;
+    --line: #33342f;
+    --accent: #7fb7a4;
+    --accent-fg: #10201b;
+    --accent-soft: #1f2e29;
+    --danger: #e08a70;
+    --danger-soft: #3a2420;
+    --warn: #d9b46a;
+    --warn-soft: #352c1b;
+    --ok: #8cc495;
+    --ok-soft: #1f2e22;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
