@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type SubmitEvent } from "react";
 
 import { useApp } from "@/components/app-context";
 import {
@@ -46,7 +46,7 @@ function PersonForm({ initial, onDone }: { initial: Person | null; onDone: () =>
     });
   }
 
-  async function submit(e: FormEvent) {
+  async function submit(e: SubmitEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
@@ -147,7 +147,7 @@ function KnowsForm() {
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
-  async function submit(e: FormEvent) {
+  async function submit(e: SubmitEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);

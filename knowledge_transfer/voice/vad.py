@@ -95,7 +95,7 @@ class EnergyVad:
                 self._preroll = (self._preroll + self._run_frames)[-self.preroll_frames:]
                 self._run_frames, self._run, self._gap = [], 0, 0
             return []
-        self._preroll = (self._preroll + [frame])[-self.preroll_frames:]
+        self._preroll = ([*self._preroll, frame])[-self.preroll_frames:]
         return []
 
     def _finish(self) -> VadEvent:

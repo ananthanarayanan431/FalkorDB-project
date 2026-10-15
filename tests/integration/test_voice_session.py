@@ -73,7 +73,7 @@ async def test_normal_answer_is_not_flagged_interrupted(seeded, interviews):
 
 
 async def test_pause_inside_grace_window_merges_into_one_answer(seeded, interviews):
-    voice, out, _, _ = await make(interviews, "first part,", "and the second part", grace=0.3)
+    voice, _out, _, _ = await make(interviews, "first part,", "and the second part", grace=0.3)
     item = voice._question["item_id"]
     await finish_playback(voice)
     await voice.on_utterance(tone(500))
@@ -113,7 +113,7 @@ async def test_speech_while_answer_is_being_saved_is_added_to_it(seeded, intervi
 
 
 async def test_skip_command_skips_without_saving(seeded, interviews):
-    voice, out, _, sid = await make(interviews, "skip")
+    voice, _out, _, sid = await make(interviews, "skip")
     first = voice._question["item_id"]
     await finish_playback(voice)
     await voice.on_utterance(tone(500))
@@ -124,7 +124,7 @@ async def test_skip_command_skips_without_saving(seeded, interviews):
 
 
 async def test_repeat_command_asks_the_same_question_again(interviews):
-    voice, out, tts, _ = await make(interviews, "repeat that")
+    voice, out, _tts, _ = await make(interviews, "repeat that")
     await finish_playback(voice)
     await voice.on_utterance(tone(500))
     await settle()

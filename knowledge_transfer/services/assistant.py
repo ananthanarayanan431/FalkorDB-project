@@ -57,7 +57,9 @@ class Assistant:
                 [SystemMessage(system), HumanMessage(human)]
             )
         except Exception as e:  # provider/network errors vary by backend
-            raise LLMUnavailable(f"LLM call failed: {e}") from e
+            # The provider's message can contain request details; keep it in the log only.
+            log.warning("LLM call failed", exc_info=True)
+            raise LLMUnavailable("The language model request failed. Try again later.") from e
 
     async def _text(self, prompt: str) -> str | None:
         """LLM free text, or None when there is no LLM or the call fails (callers fall back)."""
@@ -115,5 +117,11 @@ def template_question(gap: Gap, related: dict) -> str:
         lead.append("it is used by " + ", ".join(related["used_by"][:3]))
     prefix = f"On \"{gap.name}\": " + "; ".join(lead) + ". " if lead else f"On \"{gap.name}\": "
     if gap.kind == "decision":
-        return prefix + "Why was it decided this way, what alternatives did you reject, and what breaks if someone changes it?"
-    return prefix + "What would someone taking over most need to know, and what are the traps that are not written down?"
+        return prefix + (
+            "Why was it decided this way, what alternatives did you reject, "
+            "and what breaks if someone changes it?"
+        )
+    return prefix + (
+        "What would someone taking over most need to know, "
+        "and what are the traps that are not written down?"
+    )

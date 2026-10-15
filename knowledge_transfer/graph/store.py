@@ -15,6 +15,7 @@ Schema
 Every node and edge written here carries provenance: source, source_ref,
 confidence, created_at. All access is async (falkordb.asyncio).
 """
+import contextlib
 import time
 import uuid
 from dataclasses import dataclass
@@ -31,6 +32,14 @@ LINK_RELS = {"DEPENDS_ON", "PREREQUISITE_OF"}
 
 def _now() -> int:
     return int(time.time() * 1000)
+
+
+def _require_rel(rel: str, allowed: set[str]) -> None:
+    """Relationship types cannot be query parameters in Cypher, so they are interpolated
+    into the query text; only the fixed names in `allowed` may get there. A real check,
+    not an assert, so it survives `python -O`."""
+    if rel not in allowed:
+        raise ValueError(f"Unsupported relationship type {rel!r}")
 
 
 def _node(row) -> dict:
@@ -63,17 +72,15 @@ class KnowledgeGraph:
         self.graph = self.db.select_graph(graph_name or settings.falkordb_graph)
 
     @classmethod
-    async def connect(cls, db=None, graph_name: str | None = None) -> "KnowledgeGraph":
+    async def connect(cls, db=None, graph_name: str | None = None) -> KnowledgeGraph:
         graph = cls(db, graph_name)
         await graph.ensure_indexes()
         return graph
 
     async def ensure_indexes(self) -> None:
         for label in ("Person", "Item", "Document", "Answer"):
-            try:
+            with contextlib.suppress(ResponseError):  # the index already exists
                 await self.graph.query(f"CREATE INDEX FOR (n:{label}) ON (n.id)")
-            except ResponseError:
-                pass  # index already exists
 
     async def aclose(self) -> None:
         await self.db.aclose()
@@ -118,7 +125,7 @@ class KnowledgeGraph:
             )
 
     async def link_touch(self, person, item, rel="WORKED_ON", source="ticket", ref="", confidence=1.0):
-        assert rel in TOUCH_RELS, rel
+        _require_rel(rel, TOUCH_RELS)
         await self.graph.query(
             f"MATCH (p:Person {{id: $p}}), (i:Item {{id: $i}}) MERGE (p)-[r:{rel}]->(i) "
             "ON CREATE SET r.source = $source, r.source_ref = $ref, "
@@ -128,7 +135,7 @@ class KnowledgeGraph:
         )
 
     async def link_items(self, src, rel, dst, source="doc", ref="", confidence=1.0):
-        assert rel in LINK_RELS, rel
+        _require_rel(rel, LINK_RELS)
         await self.graph.query(
             f"MATCH (a:Item {{id: $a}}), (b:Item {{id: $b}}) MERGE (a)-[r:{rel}]->(b) "
             "ON CREATE SET r.source = $source, r.source_ref = $ref, "
@@ -179,13 +186,13 @@ class KnowledgeGraph:
         )
         if not rows:
             return None
-        return dict(zip(("id", "name", "role", "seniority", "status"), rows[0]))
+        return dict(zip(("id", "name", "role", "seniority", "status"), rows[0], strict=True))
 
     async def people(self) -> list[dict]:
         rows = await self._rows(
             "MATCH (p:Person) RETURN p.id, p.name, p.role, p.seniority, p.status ORDER BY p.name, p.id"
         )
-        return [dict(zip(("id", "name", "role", "seniority", "status"), r)) for r in rows]
+        return [dict(zip(("id", "name", "role", "seniority", "status"), r, strict=True)) for r in rows]
 
     async def leaving_person(self):
         rows = await self._rows(
@@ -200,7 +207,7 @@ class KnowledgeGraph:
         )
         if not rows:
             return None
-        return dict(zip(("id", "name", "kind", "description"), rows[0]))
+        return dict(zip(("id", "name", "kind", "description"), rows[0], strict=True))
 
     async def leaver_items(self, leaver) -> list[ItemState]:
         """Everything the leaver touched, with who else touched it, whether it is
@@ -263,7 +270,7 @@ class KnowledgeGraph:
             "MATCH (i:Item) WHERE i.id IN $ids RETURN i.id, i.name, i.kind, i.description",
             {"ids": ids},
         )
-        return {r[0]: dict(zip(("id", "name", "kind", "description"), r)) for r in rows}
+        return {r[0]: dict(zip(("id", "name", "kind", "description"), r, strict=True)) for r in rows}
 
     async def documents_for(self, ids: list[str]) -> dict[str, list[str]]:
         rows = await self._rows(

@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { RequireLeaver } from "@/components/require-leaver";
+import { Tabs } from "@/components/tabs";
 import {
   Alert,
   Badge,
@@ -187,8 +188,13 @@ function StartInterview({ leaver, onStarted }: { leaver: Person; onStarted: (id:
   );
 }
 
+const ANSWER_MODES = [
+  { value: "type", label: "Type answers" },
+  { value: "voice", label: "Speak answers" },
+] as const;
+
 function InterviewSession({ leaver, id, onClose }: { leaver: Person; id: string; onClose: () => void }) {
-  const [mode, setMode] = useState<"type" | "voice">("type");
+  const [mode, setMode] = useState<(typeof ANSWER_MODES)[number]["value"]>("type");
   const { data, error, loading, reload } = useAsync(() => api.interview(id), [id]);
 
   if (error && !data) {
@@ -213,21 +219,6 @@ function InterviewSession({ leaver, id, onClose }: { leaver: Person; id: string;
     );
   }
 
-  const tab = (value: "type" | "voice", label: string) => (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={mode === value}
-      onClick={() => setMode(value)}
-      className={cx(
-        "border-b-2 px-3 py-2 text-sm",
-        mode === value ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-fg",
-      )}
-    >
-      {label}
-    </button>
-  );
-
   return (
     <div className="space-y-6">
       <Card
@@ -240,14 +231,14 @@ function InterviewSession({ leaver, id, onClose }: { leaver: Person; id: string;
         }
         actions={<Button size="sm" onClick={onClose}>Close interview</Button>}
       >
-        {data.status === "active" && (
-          <div role="tablist" aria-label="How to answer" className="-mt-2 mb-4 flex border-b border-line">
-            {tab("type", "Type answers")}
-            {tab("voice", "Speak answers")}
-          </div>
-        )}
-        {mode === "voice" && data.status === "active" ? (
-          <VoicePanel interviewId={data.interview_id} onSaved={reload} />
+        {data.status === "active" ? (
+          <Tabs label="How to answer" items={ANSWER_MODES} value={mode} onChange={setMode} className="-mt-2 mb-4">
+            {mode === "voice" ? (
+              <VoicePanel interviewId={data.interview_id} onSaved={reload} />
+            ) : (
+              <TypedAnswer interview={data} onChange={reload} />
+            )}
+          </Tabs>
         ) : (
           <TypedAnswer interview={data} onChange={reload} />
         )}

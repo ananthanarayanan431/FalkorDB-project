@@ -6,9 +6,8 @@ from fakes.llm import FakeLLM
 
 from knowledge_transfer.core.errors import InvalidState, NotFound
 from knowledge_transfer.schemas import AnswerAnalysis, ExtractedItem
-from knowledge_transfer.services import gaps
+from knowledge_transfer.services import gaps, interview
 from knowledge_transfer.services.assistant import Assistant
-from knowledge_transfer.services import interview
 from knowledge_transfer.services.interview import InterviewService
 
 

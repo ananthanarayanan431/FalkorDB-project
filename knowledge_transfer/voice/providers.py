@@ -95,7 +95,7 @@ class VoiceProviders:
         self.synthesizer = synthesizer
 
     @classmethod
-    def from_env(cls) -> "VoiceProviders | None":
+    def from_env(cls) -> VoiceProviders | None:
         """None when OPENROUTER_API_KEY is not set (voice then answers 503)."""
         if not (key := get_settings().openrouter_api_key):
             return None

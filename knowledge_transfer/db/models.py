@@ -34,7 +34,7 @@ class Interview(TimestampMixin, Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    transcript: Mapped[list["InterviewTurn"]] = relationship(
+    transcript: Mapped[list[InterviewTurn]] = relationship(
         back_populates="interview", order_by="InterviewTurn.seq",
         cascade="all, delete-orphan", passive_deletes=True,
         lazy="raise",  # async: load explicitly, never implicitly

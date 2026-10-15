@@ -13,8 +13,9 @@ from knowledge_transfer.voice.providers import VoiceProviders
 class FakeWebSocket:
     """Just enough of Starlette's WebSocket, driven from the test."""
 
-    def __init__(self, services):
+    def __init__(self, services, origin: str | None = None):
         self.app = SimpleNamespace(state=SimpleNamespace(services=services))
+        self.headers = {"origin": origin} if origin else {}
         self.incoming: asyncio.Queue = asyncio.Queue()
         self.sent: list = []
         self.accepted = False
@@ -105,3 +106,29 @@ async def test_unknown_interview_closes_with_error(seeded, assistant, db):
     ws = FakeWebSocket(services)
     await voice_interview(ws, "nope")
     assert "Unknown interview" in ws.events("error")[0]["message"] and ws.closed_with == 1008
+
+
+async def test_foreign_origin_is_rejected_before_accept(seeded, assistant, db):
+    services = Services(seeded, assistant, db, VoiceProviders(FakeTranscriber(), FakeSynthesizer()))
+    ws = FakeWebSocket(services, origin="https://evil.example")
+    await voice_interview(ws, "whatever")
+    assert ws.accepted is False and ws.closed_with == 1008 and ws.sent == []
+
+
+async def test_configured_origin_is_accepted(seeded, assistant, db, monkeypatch):
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://kt.example.com")
+    services = Services(seeded, assistant, db, VoiceProviders(FakeTranscriber(), FakeSynthesizer()))
+    ws = FakeWebSocket(services, origin="https://kt.example.com")
+    await voice_interview(ws, "nope")  # unknown interview: accepted first, then closed with an error
+    assert ws.accepted is True and ws.closed_with == 1008
+
+
+async def test_oversized_audio_frame_closes_the_socket(seeded, assistant, db, interviews):
+    services = Services(seeded, assistant, db, VoiceProviders(FakeTranscriber(), FakeSynthesizer()))
+    session, _ = await services.interviews.start("ravi")
+    ws = FakeWebSocket(services, origin="http://localhost:3001")
+    task = asyncio.create_task(voice_interview(ws, session.id))
+    await wait_for(lambda: ws.accepted)
+    ws.push_audio(b"\x00" * (64 * 1024 + 2))
+    await asyncio.wait_for(task, 2)
+    assert ws.closed_with == 1009

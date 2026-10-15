@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type SubmitEvent, type ReactNode } from "react";
 
 import { GraphCanvas, type GraphSelection } from "@/components/graph-canvas";
+import { Tabs } from "@/components/tabs";
 import { Alert, Button, ButtonLink, Card, cx, EmptyState, ErrorAlert, inputClass, Loading, PageHeader, Stat } from "@/components/ui";
 import { api } from "@/lib/api";
 import { plural } from "@/lib/format";
 import { caption, formatProperty, labelColor, nodeMatches, primaryLabel } from "@/lib/graph-style";
-import type { RawEdge, RawNode } from "@/lib/types";
+import type { PropertyValue, RawEdge, RawNode } from "@/lib/types";
 import { useAsync } from "@/lib/use-async";
 import { GraphTable } from "@/views/graph";
 
@@ -17,7 +18,7 @@ function Swatch({ color }: { color: string }) {
   return <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} />;
 }
 
-function Toggle({ on, onClick, children, title }: { on: boolean; onClick: () => void; children: React.ReactNode; title: string }) {
+function Toggle({ on, onClick, children, title }: { on: boolean; onClick: () => void; children: ReactNode; title: string }) {
   return (
     <button
       type="button"
@@ -34,7 +35,7 @@ function Toggle({ on, onClick, children, title }: { on: boolean; onClick: () => 
   );
 }
 
-function Properties({ properties }: { properties: Record<string, RawNode["properties"][string]> }) {
+function Properties({ properties }: { properties: Record<string, PropertyValue> }) {
   const entries = Object.entries(properties).sort(([a], [b]) => a.localeCompare(b));
   if (entries.length === 0) return <p className="text-sm text-muted">No properties.</p>;
   return (
@@ -217,7 +218,7 @@ function Explorer() {
     schema.reload();
   }
 
-  function findNext(e: FormEvent) {
+  function findNext(e: SubmitEvent) {
     e.preventDefault();
     if (matchList.length === 0) return;
     const i = matchIndex % matchList.length;
@@ -356,34 +357,22 @@ function Explorer() {
   );
 }
 
-export function GraphView() {
-  const [tab, setTab] = useState<"visual" | "table">("visual");
-  const tabButton = (value: typeof tab, label: string) => (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={tab === value}
-      onClick={() => setTab(value)}
-      className={cx(
-        "border-b-2 px-3 py-2 text-sm",
-        tab === value ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-fg",
-      )}
-    >
-      {label}
-    </button>
-  );
+const TABS = [
+  { value: "visual", label: "Visual" },
+  { value: "table", label: "Table" },
+] as const;
 
+export function GraphView() {
+  const [tab, setTab] = useState<(typeof TABS)[number]["value"]>("visual");
   return (
     <>
       <PageHeader
         title="Graph"
         description="The knowledge graph as stored in FalkorDB: every node, relationship and property."
       />
-      <div role="tablist" aria-label="Graph view" className="mb-4 flex border-b border-line">
-        {tabButton("visual", "Visual")}
-        {tabButton("table", "Table")}
-      </div>
-      {tab === "visual" ? <Explorer /> : <GraphTable />}
+      <Tabs label="Graph view" items={TABS} value={tab} onChange={setTab} className="mb-4">
+        {tab === "visual" ? <Explorer /> : <GraphTable />}
+      </Tabs>
     </>
   );
 }

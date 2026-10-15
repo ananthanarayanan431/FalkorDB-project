@@ -1,4 +1,6 @@
-from fastapi import APIRouter, status
+from typing import Annotated
+
+from fastapi import APIRouter, Body, status
 
 from knowledge_transfer.api.deps import ServicesDep, require_person
 from knowledge_transfer.api.responses import ApiResponse, ok
@@ -6,6 +8,8 @@ from knowledge_transfer.core.errors import NotFound
 from knowledge_transfer.schemas import KnowsLevelIn, PersonIn
 
 router = APIRouter(prefix="/people", tags=["people"])
+
+MAX_KNOWS_PER_REQUEST = 1_000
 
 
 @router.get("")
@@ -21,7 +25,11 @@ async def post_person(person: PersonIn, services: ServicesDep) -> ApiResponse[Pe
 
 
 @router.put("/{person}/knows")
-async def put_knows(person: str, knows: list[KnowsLevelIn], services: ServicesDep) -> ApiResponse[dict]:
+async def put_knows(
+    person: str,
+    knows: Annotated[list[KnowsLevelIn], Body(max_length=MAX_KNOWS_PER_REQUEST)],
+    services: ServicesDep,
+) -> ApiResponse[dict]:
     await require_person(services, person)
     # Validate every item before writing so a bad entry leaves nothing half-applied.
     if missing := [k.item for k in knows if await services.graph.item(k.item) is None]:

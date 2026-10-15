@@ -169,8 +169,9 @@ class VoiceSession:
                 self.state = State.ENDED
         except asyncio.CancelledError:
             raise
-        except ProviderError as e:
-            await self._fail(f"Could not speak: {e}")
+        except ProviderError:
+            logger.warning("Speech synthesis failed", exc_info=True)
+            await self._fail("Could not read the question aloud. Say \"repeat that\" to try again.")
 
     # ---- answering ---------------------------------------------------------
 
@@ -188,7 +189,8 @@ class VoiceSession:
         try:
             results = await asyncio.gather(*pending, return_exceptions=True)
             if errors := [r for r in results if isinstance(r, Exception)]:
-                await self._fail(f"Could not transcribe: {errors[0]}")
+                logger.warning("Transcription failed", exc_info=errors[0])
+                await self._fail("Could not understand the recording. Please say that again.")
                 return
             text = " ".join(r for r in results if r).strip()
             if not text:
@@ -206,9 +208,9 @@ class VoiceSession:
             # whatever question is current now, so the next answer is saved against it.
             await self.out.event({"type": "error", "message": e.message})
             await self._resync()
-        except Exception as e:  # keep the interview alive; the leaver can just speak again
+        except Exception:  # keep the interview alive; the leaver can just speak again
             logger.exception("Voice turn failed")
-            await self._fail(f"Something went wrong: {e}")
+            await self._fail("Something went wrong saving that answer. Please say it again.")
         finally:
             self._committing = False
             self._interrupted = False

@@ -39,7 +39,7 @@ class Session:
         return d
 
     @classmethod
-    def from_state(cls, id: str, d: dict[str, Any], version: int) -> "Session":
+    def from_state(cls, id: str, d: dict[str, Any], version: int) -> Session:
         current = Question(**d["current"]) if d["current"] else None
         return cls(id, d["leaver"], current, [Question(**q) for q in d["follow_ups"]],
                    set(d["skipped"]), d["turns"], version, d.get("busy_since"))

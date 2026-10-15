@@ -62,9 +62,9 @@ function Explorer({ data }: { data: GraphExport }) {
         <Card
           title="Nodes"
           actions={
-            <div role="tablist" aria-label="Node type" className="flex flex-wrap gap-1">
+            <div role="group" aria-label="Node type" className="flex flex-wrap gap-1">
               {NODE_TYPES.map((t) => (
-                <Button key={t} size="sm" variant={type === t ? "primary" : "secondary"} role="tab" aria-selected={type === t} onClick={() => setType(t)}>
+                <Button key={t} size="sm" variant={type === t ? "primary" : "secondary"} aria-pressed={type === t} onClick={() => setType(t)}>
                   {t}
                 </Button>
               ))}

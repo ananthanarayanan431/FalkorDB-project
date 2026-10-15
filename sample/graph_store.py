@@ -1,9 +1,10 @@
 """Thin wrapper around FalkorDB: stores facts as (Entity)-[RELATION]->(Entity)."""
+import contextlib
 import logging
 import os
 import re
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from falkordb import FalkorDB
 from redis.exceptions import ResponseError
@@ -55,10 +56,8 @@ class GraphStore:
         self.graph = self.db.select_graph(
             graph_name or os.getenv("FALKORDB_GRAPH", "chat_memory")
         )
-        try:
+        with contextlib.suppress(ResponseError):  # the index already exists
             self.graph.query("CREATE INDEX FOR (e:Entity) ON (e.name)")
-        except ResponseError:
-            pass  # index already exists
         if self.embed:
             dim = embedding_dim or int(os.getenv("EMBEDDING_DIM", "1536"))
             try:

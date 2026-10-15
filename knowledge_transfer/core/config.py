@@ -59,7 +59,7 @@ class Settings:
         return self.environment == "production"
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         env = os.getenv
         environment = env("APP_ENV", "development").strip().lower()
         if environment not in ("development", "production"):
