@@ -336,8 +336,8 @@ function Explorer() {
             fitNonce={fitNonce}
           />
           <p className="border-t border-line px-3 py-2 text-xs text-muted">
-            Drag nodes to move them, scroll to zoom, drag the background to pan. Names appear when
-            you zoom in. The Table tab lists the same data as text.
+            Drag nodes to move them, scroll to zoom, drag the background to pan. On large graphs,
+            names appear as you zoom in. The Table tab lists the same data as text.
           </p>
         </div>
         <Card className="min-w-0 self-start">
