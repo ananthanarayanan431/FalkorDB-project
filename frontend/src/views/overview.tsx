@@ -19,7 +19,6 @@ import {
   Stat,
 } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
-import { plural } from "@/lib/format";
 import type { Person } from "@/lib/types";
 import { useAsync } from "@/lib/use-async";
 

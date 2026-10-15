@@ -133,7 +133,7 @@ export function Alert({ tone = "accent", title, children, action }: { tone?: Exc
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           {title && <p className="font-medium">{title}</p>}
-          {children && <div className={cx(title && "mt-0.5", "text-fg/90")}>{children}</div>}
+          {children && <div className={cx(Boolean(title) && "mt-0.5", "text-fg/90")}>{children}</div>}
         </div>
         {action}
       </div>
