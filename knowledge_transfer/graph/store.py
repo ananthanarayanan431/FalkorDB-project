@@ -171,6 +171,12 @@ class KnowledgeGraph:
             return None
         return dict(zip(("id", "name", "role", "seniority", "status"), rows[0]))
 
+    async def people(self) -> list[dict]:
+        rows = await self._rows(
+            "MATCH (p:Person) RETURN p.id, p.name, p.role, p.seniority, p.status ORDER BY p.name, p.id"
+        )
+        return [dict(zip(("id", "name", "role", "seniority", "status"), r)) for r in rows]
+
     async def leaving_person(self):
         rows = await self._rows(
             "MATCH (p:Person {status: 'leaving'}) RETURN p.id ORDER BY p.id LIMIT 1"
